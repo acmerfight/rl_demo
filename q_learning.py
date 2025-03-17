@@ -82,10 +82,25 @@ def train(env, agent, episodes=100):
             if episode < 3:
                 print(f"Episode {episode+1}, Step {steps+1}:")
                 print(f"状态: {state} -> 动作: {action} -> 新状态: {next_state}, 奖励: {reward}")
-                print("当前Q表:")
+                
+                # 美观地打印Q表
+                print("\n当前Q表:")
+                # 打印表头
+                header = f"{'状态/动作':<10}"
+                for a in actions:
+                    header += f"{a:<10}"
+                print(header)
+                print("-" * (10 + 10 * len(actions)))
+                
+                # 打印每个状态的Q值
                 for s in agent.q_table:
-                    print(f"{s}: {agent.q_table[s]}")
-                print("-------------------")
+                    row = f"{s:<10}"
+                    for a in actions:
+                        value = agent.q_table[s][a]
+                        row += f"{value:>9.1f} "
+                    print(row)
+                print("-" * (10 + 10 * len(actions)))
+                print()
             
             total_reward += reward
             state = next_state
