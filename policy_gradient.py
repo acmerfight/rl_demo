@@ -107,8 +107,11 @@ class PolicyGradientAgent:
         self.rewards_history = []  # 每轮总奖励
         
         # 当前episode的轨迹
+        # 状态序列：s₁, s₂, ..., sₙ
         self.states_history = []  # 状态历史
+        # 动作序列：a₁, a₂, ..., aₙ
         self.actions_history = []  # 动作历史
+        # 奖励序列：r₁, r₂, ..., rₙ
         self.rewards_history_episode = []  # 奖励历史
         
     def get_action_probs(self, state: str, available_actions: List[str]) -> Dict[str, float]:
