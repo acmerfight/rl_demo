@@ -157,7 +157,13 @@ class PolicyGradientAgent:
         returns = []
         G = 0
         
-        # 从后向前计算回报
+        # 从后向前计算回报,回报是从当前时间步到序列结束的所有奖励的累积和（考虑折扣因子）。
+        # 这意味着每个时间步的回报是当前奖励加上未来奖励的折扣累积和。
+        # 从序列末尾开始向前计算：
+        # 最后一步的回报 = 最后一步的奖励
+        # 倒数第二步的回报 = 倒数第二步的奖励 + γ×最后一步的回报
+        # 依此类推...
+        # 这样每一步的回报G反映了该步骤对未来总奖励的贡献。
         for r in reversed(self.rewards_history_episode):
             G = r + self.gamma * G  # 加入折扣因子
             returns.insert(0, G)
