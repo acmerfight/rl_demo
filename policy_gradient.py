@@ -21,7 +21,7 @@ class MazeEnv:
         # 迷宫布局（用于可视化）
         self.maze_layout = [
             ['A', 'B', 'C'],
-            ['D', ' ', ' ']
+            ['D', 'D', 'D']
         ]
         
     def reset(self) -> str:
