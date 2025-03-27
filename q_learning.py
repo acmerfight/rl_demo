@@ -376,7 +376,7 @@ if __name__ == "__main__":
     
     # 训练智能体
     # verbose=2表示详细输出，包括每步Q值更新
-    train(env, agent, episodes=100000, verbose=2, visualization_speed=0.5)
+    train(env, agent, episodes=100, verbose=2, visualization_speed=0.5)
     
     # 显示最终Q表
     print("\n最终Q表：")
