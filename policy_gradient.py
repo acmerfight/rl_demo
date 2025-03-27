@@ -181,6 +181,11 @@ class PolicyGradientAgent:
         # 依此类推...
         # 这样每一步的回报G反映了该步骤对未来总奖励的贡献。
         for r in reversed(self.rewards_history_episode):
+            # 策略梯度算法中的折扣因子(γ)扮演着关键角色：
+            # 时间偏好：γ < 1 表示更看重近期奖励，γ 接近1则更看重远期奖励
+            # 数学收敛：保证无限时间序列下回报值的有限性
+            # 不确定性建模：未来奖励的不确定性随时间增加
+            # 调节视野：控制智能体考虑多远的未来后果
             G = r + self.gamma * G  # 加入折扣因子
             returns.insert(0, G)
 
@@ -215,7 +220,12 @@ class PolicyGradientAgent:
                 else:
                     gradient = -action_probs[a]
                 
-                # 参数更新（上升梯度，因为我们要最大化回报）
+                # 当 G 为正值（动作带来了好的回报）：
+                # 对于选中的动作：gradient是正的，所以参数增加
+                # 对于未选中的动作：gradient是负的，所以参数减少
+                # 当G为负值（动作带来了坏的回报）：
+                # 对于选中的动作：gradient是正的，但G是负的，所以参数减少
+                # 对于未选中的动作：gradient是负的，但G是负的，所以参数增加
                 self.policy_params[state][a] += self.learning_rate * gradient * G
         
         # 记录这一episode的总回报
