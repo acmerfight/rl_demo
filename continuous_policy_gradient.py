@@ -451,7 +451,7 @@ class ContinuousPolicyGradientAgent:
         ax.text(
             0.1,
             0.9,
-            f"动作标准差: {std_display}",
+            f"action std: {std_display}",
             transform=ax.transAxes,
             fontsize=10,
             bbox=dict(facecolor="white", alpha=0.5),
