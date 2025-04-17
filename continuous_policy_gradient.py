@@ -104,7 +104,7 @@ class TargetFindingEnv:
         if self.current_step >= self.max_steps and distance_to_target >= 0.5:
             reward = -distance_to_target * 10
         elif distance_to_target < 0.5:  # 到达目标
-            reward = distance_to_target * 10
+            reward = 50
         # 距离缩小给正奖励
         elif distance_to_target < self.prev_distance:
             reward = 2.0 * (self.prev_distance - distance_to_target)
@@ -150,7 +150,7 @@ class TargetFindingEnv:
             radius=0.5,
             color="green",
             alpha=0.7,
-            label="目标",
+            label="Target",
         )
         ax.add_patch(target)
 
@@ -161,14 +161,14 @@ class TargetFindingEnv:
                 radius=0.3,
                 color="blue",
                 alpha=0.7,
-                label="智能体",
+                label="Agent",
             )
             ax.add_patch(agent)
 
         # 添加标签
         ax.set_xlabel("X Position")
         ax.set_ylabel("Y Position")
-        ax.set_title("目标寻找环境")
+        ax.set_title("Target Finding Environment")
         ax.legend()
 
         # 如果是交互模式，需要刷新画布
@@ -560,7 +560,7 @@ def train(
             ax2.plot(episode_rewards, "b-")
             ax2.set_xlabel("Episode")
             ax2.set_ylabel("Total Reward")
-            ax2.set_title("训练进度")
+            ax2.set_title("Training Progress")
             plt.pause(0.01)
 
         # 打印训练信息
@@ -599,7 +599,7 @@ def test_agent(
         steps: int = 0
         episode_info: Optional[Dict[str, float]] = None  # 用于存储最后一步的info
 
-        print(f"\nEpisode {episode + 1} 开始")
+        print(f"\nEpisode {episode + 1} start")
         ax = env.render(ax=ax)
         plt.pause(delay)
 
