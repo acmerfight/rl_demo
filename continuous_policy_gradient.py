@@ -264,17 +264,16 @@ class ContinuousPolicyGradientAgent:
             std: np.ndarray = np.exp(np.clip(self.log_std, -5.0, 2.0))  # 限制标准差范围
             # 生成随机噪声
             noise: np.ndarray = np.random.randn(self.action_dim)
-            # 检查噪声是否有效
-            if np.any(np.isnan(noise)) or np.any(np.isinf(noise)):
-                noise = np.zeros(self.action_dim)
+            # 将噪声乘以标准差并加到均值上，得到最终的动作
+            # 这等同于从N(action_mean, std²)的正态分布中采样
             action: np.ndarray = action_mean + noise * std
         else:
             # 测试模式，直接使用均值作为动作
             action = action_mean
 
-        # 确保动作没有NaN
-        if np.any(np.isnan(action)) or np.any(np.isinf(action)):
-            action = np.zeros(self.action_dim)
+        # 处理潜在的无效值，保留方向但限制幅度
+        # 先替换所有NaN和Inf为0
+        action = np.nan_to_num(action, nan=0.0, posinf=None, neginf=None)
 
         return action
 
