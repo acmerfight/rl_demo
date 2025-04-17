@@ -17,7 +17,7 @@ class TargetFindingEnv:
     """
 
     def __init__(
-        self, target_position: Tuple[float, float] = (8, 8), max_steps: int = 50
+        self, target_position: Tuple[float, float] = (8, 8), max_steps: int = 500
     ) -> None:
         # 环境界限
         self.x_min: float = 0
@@ -37,6 +37,8 @@ class TargetFindingEnv:
 
         # 动作空间界限
         self.action_bound: float = 1.0  # 动作取值范围 [-1, 1]
+        # 上一步的距离
+        self.prev_distance: float = -np.inf
 
     def reset(self) -> np.ndarray:
         """重置环境到随机初始状态"""
@@ -54,6 +56,9 @@ class TargetFindingEnv:
                 break
 
         self.current_step = 0
+        self.prev_distance = float(
+            np.linalg.norm(self.agent_position - self.target_position)
+        )
         return self.agent_position.copy()
 
     def step(
@@ -95,21 +100,27 @@ class TargetFindingEnv:
 
         # 计算奖励
         reward: float = 0.0
-        if distance_to_target < 0.5:  # 到达目标
-            reward = 10.0
-        else:
-            # 根据距离给予负奖励，越近奖励越高（负得越少）
-            reward = -0.1 * distance_to_target
+        # 游戏结束，但是没有到达目标
+        if self.current_step >= self.max_steps and distance_to_target >= 0.5:
+            reward = -distance_to_target * 10
+        elif distance_to_target < 0.5:  # 到达目标
+            reward = distance_to_target * 10
+        # 距离缩小给正奖励
+        elif distance_to_target < self.prev_distance:
+            reward = 2.0 * (self.prev_distance - distance_to_target)
+        # 距离扩大给负奖励
+        elif distance_to_target >= self.prev_distance:
+            reward = -1.0 * (distance_to_target - self.prev_distance)
 
-            # 如果出界，给额外惩罚
-            if (
-                self.agent_position[0] == self.x_min
-                or self.agent_position[0] == self.x_max
-                or self.agent_position[1] == self.y_min
-                or self.agent_position[1] == self.y_max
-            ):
-                reward -= 1.0
+        if (
+            self.agent_position[0] < self.x_min
+            or self.agent_position[0] > self.x_max
+            or self.agent_position[1] < self.y_min
+            or self.agent_position[1] > self.y_max
+        ):
+            reward -= 1.0
 
+        self.prev_distance = distance_to_target
         info: Dict[str, float] = {
             "distance": distance_to_target,
             "steps": float(self.current_step),
