@@ -100,17 +100,17 @@ class TargetFindingEnv:
 
         # 计算奖励
         reward: float = 0.0
-        # 游戏结束，但是没有到达目标
-        if self.current_step >= self.max_steps and distance_to_target >= 0.5:
-            reward = -distance_to_target * 10
-        elif distance_to_target < 0.5:  # 到达目标
-            reward = 50
+        # 到达目标
+        if distance_to_target < 0.5:
+            reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
         # 距离缩小给正奖励
         elif distance_to_target < self.prev_distance:
-            reward = 2.0 * (self.prev_distance - distance_to_target)
+            reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
         # 距离扩大给负奖励
-        elif distance_to_target >= self.prev_distance:
-            reward = -1.0 * (distance_to_target - self.prev_distance)
+        elif distance_to_target > self.prev_distance:
+            reward = -1.1 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
+        elif distance_to_target == self.prev_distance:
+            reward = -10.0
 
         if (
             self.agent_position[0] < self.x_min
@@ -120,12 +120,14 @@ class TargetFindingEnv:
         ):
             reward -= 1.0
 
+        print(
+            f"reward: {reward} diff: {distance_to_target - self.prev_distance}, prev: {self.prev_distance}, current: {distance_to_target}"
+        )
         self.prev_distance = distance_to_target
         info: Dict[str, float] = {
             "distance": distance_to_target,
             "steps": float(self.current_step),
         }
-
         return self.agent_position.copy(), reward, done, info
 
     def render(
@@ -395,7 +397,7 @@ class ContinuousPolicyGradientAgent:
             log_std_grad = np.clip(log_std_grad, -1.0, 1.0)
 
             # 更新log_std参数，使用较小的学习率
-            log_std_update: np.ndarray = lr_scaled * 0.01 * G * log_std_grad
+            log_std_update: np.ndarray = lr_scaled * 0.5 * G * log_std_grad
             log_std_update = np.clip(log_std_update, -0.1, 0.1)
             self.log_std += log_std_update
 
@@ -496,7 +498,7 @@ def explain_continuous_policy_gradient() -> None:
 def train(
     env: TargetFindingEnv,
     agent: ContinuousPolicyGradientAgent,
-    episodes: int = 500,
+    episodes: int = 5000000000,
     render_freq: int = 50,
     render_delay: float = 0.01,
 ) -> List[float]:
@@ -676,7 +678,7 @@ if __name__ == "__main__":
     )
 
     # 训练智能体
-    rewards: List[float] = train(env, agent, episodes=300, render_freq=50)
+    rewards: List[float] = train(env, agent, episodes=100 * 10000, render_freq=50)
 
     # 测试智能体
     test_agent(env, agent)
