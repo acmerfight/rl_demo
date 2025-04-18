@@ -17,7 +17,7 @@ class TargetFindingEnv:
     """
 
     def __init__(
-        self, target_position: Tuple[float, float] = (8, 8), max_steps: int = 500
+        self, target_position: Tuple[float, float] = (8, 8), max_steps: int = 100
     ) -> None:
         # 环境界限
         self.x_min: float = 0
@@ -108,9 +108,9 @@ class TargetFindingEnv:
             reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
         # 距离扩大给负奖励
         elif distance_to_target > self.prev_distance:
-            reward = -1.1 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
+            reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
         elif distance_to_target == self.prev_distance:
-            reward = -10.0
+            reward = -50.0
 
         if (
             self.agent_position[0] < self.x_min
@@ -118,11 +118,12 @@ class TargetFindingEnv:
             or self.agent_position[1] < self.y_min
             or self.agent_position[1] > self.y_max
         ):
-            reward -= 1.0
+            # 超出边界惩罚
+            reward -= 100.0
 
-        print(
-            f"reward: {reward} diff: {distance_to_target - self.prev_distance}, prev: {self.prev_distance}, current: {distance_to_target}"
-        )
+        # print(
+        #     f"reward: {reward} diff: {distance_to_target - self.prev_distance}, prev: {self.prev_distance}, current: {distance_to_target}"
+        # )
         self.prev_distance = distance_to_target
         info: Dict[str, float] = {
             "distance": distance_to_target,
@@ -577,7 +578,7 @@ def train(
 def test_agent(
     env: TargetFindingEnv,
     agent: ContinuousPolicyGradientAgent,
-    episodes: int = 5,
+    episodes: int = 10000000,
     delay: float = 0.2,
 ) -> None:
     """测试已训练的智能体"""
@@ -603,7 +604,7 @@ def test_agent(
 
         while not done:
             # 测试时使用确定性策略
-            action: np.ndarray = agent.get_action(state, explore=False)
+            action: np.ndarray = agent.get_action(state, explore=True)
 
             # 执行动作
             next_state, reward, done, info = env.step(action)
