@@ -16,9 +16,7 @@ class TargetFindingEnv:
     动作: [dx, dy] - 移动方向和力度（连续值）
     """
 
-    def __init__(
-        self, target_position: Tuple[float, float] = (8, 8), max_steps: int = 100
-    ) -> None:
+    def __init__(self, target_position: Tuple[float, float] = (8, 8), max_steps: int = 100) -> None:
         # 环境界限
         self.x_min: float = 0
         self.x_max: float = 10
@@ -56,14 +54,10 @@ class TargetFindingEnv:
                 break
 
         self.current_step = 0
-        self.prev_distance = float(
-            np.linalg.norm(self.agent_position - self.target_position)
-        )
+        self.prev_distance = float(np.linalg.norm(self.agent_position - self.target_position))
         return self.agent_position.copy()
 
-    def step(
-        self, action: np.ndarray
-    ) -> Tuple[np.ndarray, float, bool, Dict[str, float]]:
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict[str, float]]:
         """
         执行动作，返回新状态、奖励、是否完成和额外信息
 
@@ -91,9 +85,7 @@ class TargetFindingEnv:
         self.agent_position = new_position
 
         # 计算到目标的距离
-        distance_to_target: float = float(
-            np.linalg.norm(self.agent_position - self.target_position)
-        )
+        distance_to_target: float = float(np.linalg.norm(self.agent_position - self.target_position))
 
         # 判断是否到达目标或超出步数限制
         done: bool = False
@@ -103,9 +95,7 @@ class TargetFindingEnv:
         if self.current_step == self.max_steps:
             done = True
             if distance_to_target <= 0.5:
-                reward = (
-                    100 + 100 * (self.max_steps - self.current_step) / self.max_steps
-                )
+                reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
             else:
                 reward = -distance_to_target
         # 步数未超出限制
@@ -114,17 +104,13 @@ class TargetFindingEnv:
             # 到达目标
             if distance_to_target < 0.5:
                 done = True
-                reward = (
-                    100 + 100 * (self.max_steps - self.current_step) / self.max_steps
-                )
+                reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
             # 距离缩小给正奖励
             elif distance_to_target < self.prev_distance:
                 reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
             # 距离扩大给负奖励
             elif distance_to_target > self.prev_distance:
-                reward = -1.5 * (
-                    distance_to_target - self.prev_distance
-                )  # 平衡惩罚系数
+                reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
             elif distance_to_target == self.prev_distance:
                 reward = -50.0
         # 步数超出限制
@@ -138,9 +124,7 @@ class TargetFindingEnv:
         }
         return self.agent_position.copy(), reward, done, info
 
-    def render(
-        self, mode: str = "human", ax: Optional[Axes] = None, clear: bool = True
-    ) -> Axes:
+    def render(self, mode: str = "human", ax: Optional[Axes] = None, clear: bool = True) -> Axes:
         """可视化当前环境状态"""
         if ax is None:
             plt.figure(figsize=(8, 8))
@@ -298,16 +282,10 @@ class ContinuousPolicyGradientAgent:
 
         return action
 
-    def store_transition(
-        self, state: np.ndarray, action: np.ndarray, reward: float
-    ) -> None:
+    def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float) -> None:
         """存储一步轨迹"""
         # 确保存储的值是有效的
-        if (
-            not np.any(np.isnan(state))
-            and not np.any(np.isnan(action))
-            and not np.isnan(reward)
-        ):
+        if not np.any(np.isnan(state)) and not np.any(np.isnan(action)) and not np.isnan(reward):
             self.states.append(state)
             self.actions.append(action)
             self.rewards.append(reward)
@@ -442,9 +420,7 @@ class ContinuousPolicyGradientAgent:
 
         # 归一化
         magnitude: np.ndarray = np.sqrt(U**2 + V**2)
-        max_magnitude: float = float(
-            np.max(magnitude) if np.max(magnitude) > 0 else 1.0
-        )
+        max_magnitude: float = float(np.max(magnitude) if np.max(magnitude) > 0 else 1.0)
         if max_magnitude > 0:
             U = U / max_magnitude
             V = V / max_magnitude
@@ -621,10 +597,7 @@ def test_agent(
             total_reward += reward
 
             # 打印当前步骤信息
-            print(
-                f"Step {steps + 1}: Action={action}, Reward={reward:.2f}, "
-                + f"Distance={info['distance']:.2f}"
-            )
+            print(f"Step {steps + 1}: Action={action}, Reward={reward:.2f}, " + f"Distance={info['distance']:.2f}")
 
             # 更新状态
             state = next_state
@@ -651,19 +624,14 @@ def test_agent(
         total_rewards.append(total_reward)
 
         # 使用保存的episode_info
-        if (
-            episode_info is not None
-            and episode_info.get("distance", float("inf")) < 0.5
-        ):
+        if episode_info is not None and episode_info.get("distance", float("inf")) < 0.5:
             success_count += 1
             print(f"成功! 总奖励: {total_reward:.2f}, 步数: {steps}")
         else:
             print(f"失败. 总奖励: {total_reward:.2f}, 步数: {steps}")
 
     success_rate: float = success_count / episodes * 100
-    print(
-        f"\n测试结果: 成功率 {success_rate:.1f}%, 平均奖励: {np.mean(total_rewards):.2f}"
-    )
+    print(f"\n测试结果: 成功率 {success_rate:.1f}%, 平均奖励: {np.mean(total_rewards):.2f}")
 
 
 if __name__ == "__main__":
