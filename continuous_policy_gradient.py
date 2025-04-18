@@ -112,15 +112,6 @@ class TargetFindingEnv:
         elif distance_to_target == self.prev_distance:
             reward = -50.0
 
-        if (
-            self.agent_position[0] < self.x_min
-            or self.agent_position[0] > self.x_max
-            or self.agent_position[1] < self.y_min
-            or self.agent_position[1] > self.y_max
-        ):
-            # 超出边界惩罚
-            reward -= 100.0
-
         # print(
         #     f"reward: {reward} diff: {distance_to_target - self.prev_distance}, prev: {self.prev_distance}, current: {distance_to_target}"
         # )
