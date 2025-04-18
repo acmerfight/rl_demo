@@ -105,14 +105,15 @@ class TargetFindingEnv:
             if distance_to_target < 0.5:
                 done = True
                 reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
-            # 距离缩小给正奖励
-            elif distance_to_target < self.prev_distance:
-                reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
-            # 距离扩大给负奖励
-            elif distance_to_target > self.prev_distance:
-                reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
-            elif distance_to_target == self.prev_distance:
-                reward = -3.0
+            # 没有到达目标
+            else:
+                if distance_to_target < self.prev_distance:
+                    reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
+                # 距离扩大给负奖励
+                elif distance_to_target > self.prev_distance:
+                    reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
+                elif distance_to_target == self.prev_distance:
+                    reward = -100
         # 步数超出限制
         else:
             raise ValueError("Invalid step count")
@@ -478,7 +479,7 @@ def explain_continuous_policy_gradient() -> None:
 def train(
     env: TargetFindingEnv,
     agent: ContinuousPolicyGradientAgent,
-    episodes: int = 5000,
+    episodes: int = 10000,
     render_freq: int = 50,
     render_delay: float = 0.01,
 ) -> List[float]:
@@ -547,7 +548,11 @@ def train(
 
         # 打印训练信息
         if should_render or episode == episodes - 1:
-            print(f"Episode {episode + 1}/{episodes}, Total Reward: {total_reward:.2f}")
+            # 计算最近 render_freq 个 episode 的平均奖励
+            start_index = max(0, episode - render_freq + 1)
+            recent_rewards = episode_rewards[start_index : episode + 1]
+            avg_reward = np.mean(recent_rewards) if recent_rewards else 0.0
+            print(f"Episode {episode + 1}/{episodes}, Avg Reward (last {len(recent_rewards)} episodes): {avg_reward:.2f}")
 
             # 在环境中显示策略
             env.render(ax=ax1, clear=False)
@@ -650,7 +655,7 @@ if __name__ == "__main__":
     )
 
     # 训练智能体
-    rewards: List[float] = train(env, agent, episodes=5000, render_freq=50)
+    rewards: List[float] = train(env, agent, episodes=10000, render_freq=50)
 
     # 测试智能体
     test_agent(env, agent)
