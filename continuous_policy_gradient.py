@@ -96,25 +96,41 @@ class TargetFindingEnv:
         )
 
         # 判断是否到达目标或超出步数限制
-        done: bool = (distance_to_target < 0.5) or (self.current_step >= self.max_steps)
+        done: bool = False
 
-        # 计算奖励
         reward: float = 0.0
-        # 到达目标
-        if distance_to_target < 0.5:
-            reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
-        # 距离缩小给正奖励
-        elif distance_to_target < self.prev_distance:
-            reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
-        # 距离扩大给负奖励
-        elif distance_to_target > self.prev_distance:
-            reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
-        elif distance_to_target == self.prev_distance:
-            reward = -50.0
+        # 如果步数与最大步数相同，则游戏结束
+        if self.current_step == self.max_steps:
+            done = True
+            if distance_to_target <= 0.5:
+                reward = (
+                    100 + 100 * (self.max_steps - self.current_step) / self.max_steps
+                )
+            else:
+                reward = -distance_to_target
+        # 步数未超出限制
+        elif self.current_step < self.max_steps:
+            # 计算奖励
+            # 到达目标
+            if distance_to_target < 0.5:
+                done = True
+                reward = (
+                    100 + 100 * (self.max_steps - self.current_step) / self.max_steps
+                )
+            # 距离缩小给正奖励
+            elif distance_to_target < self.prev_distance:
+                reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
+            # 距离扩大给负奖励
+            elif distance_to_target > self.prev_distance:
+                reward = -1.5 * (
+                    distance_to_target - self.prev_distance
+                )  # 平衡惩罚系数
+            elif distance_to_target == self.prev_distance:
+                reward = -50.0
+        # 步数超出限制
+        else:
+            raise ValueError("Invalid step count")
 
-        # print(
-        #     f"reward: {reward} diff: {distance_to_target - self.prev_distance}, prev: {self.prev_distance}, current: {distance_to_target}"
-        # )
         self.prev_distance = distance_to_target
         info: Dict[str, float] = {
             "distance": distance_to_target,
