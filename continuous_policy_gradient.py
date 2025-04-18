@@ -498,7 +498,7 @@ def explain_continuous_policy_gradient() -> None:
 def train(
     env: TargetFindingEnv,
     agent: ContinuousPolicyGradientAgent,
-    episodes: int = 5000000000,
+    episodes: int = 5000,
     render_freq: int = 50,
     render_delay: float = 0.01,
 ) -> List[float]:
@@ -678,7 +678,7 @@ if __name__ == "__main__":
     )
 
     # 训练智能体
-    rewards: List[float] = train(env, agent, episodes=100 * 10000, render_freq=50)
+    rewards: List[float] = train(env, agent, episodes=5000, render_freq=50)
 
     # 测试智能体
     test_agent(env, agent)
