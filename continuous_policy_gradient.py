@@ -112,7 +112,7 @@ class TargetFindingEnv:
             elif distance_to_target > self.prev_distance:
                 reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
             elif distance_to_target == self.prev_distance:
-                reward = -50.0
+                reward = -3.0
         # 步数超出限制
         else:
             raise ValueError("Invalid step count")
