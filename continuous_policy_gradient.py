@@ -97,7 +97,7 @@ class TargetFindingEnv:
             if distance_to_target <= 0.5:
                 reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
             else:
-                reward = -distance_to_target
+                reward = -100
         # 步数未超出限制
         elif self.current_step < self.max_steps:
             # 计算奖励
