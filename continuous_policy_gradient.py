@@ -335,10 +335,6 @@ class ContinuousPolicyGradientAgent:
         if len(self.states) == 0:
             return
 
-        # 转换为numpy数组
-        states: np.ndarray = np.array(self.states, dtype=np.float64)
-        actions: np.ndarray = np.array(self.actions, dtype=np.float64)
-
         # 计算回报
         returns: np.ndarray = self.compute_returns()
         if len(returns) == 0:
