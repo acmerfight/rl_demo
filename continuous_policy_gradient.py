@@ -86,38 +86,61 @@ class TargetFindingEnv:
 
         # 计算到目标的距离
         distance_to_target: float = float(np.linalg.norm(self.agent_position - self.target_position))
-
+        
+        # 计算距离变化
+        distance_delta: float = self.prev_distance - distance_to_target
+        
         # 判断是否到达目标或超出步数限制
         done: bool = False
-
         reward: float = 0.0
-        # 如果步数与最大步数相同，则游戏结束
-        if self.current_step == self.max_steps:
+        
+        # --- 新的奖励设计开始 ---
+        
+        # 1. 到达目标的奖励 - 给予较大正奖励并奖励更快到达
+        if distance_to_target < 0.5:
             done = True
-            if distance_to_target <= 0.5:
-                reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
-            else:
-                reward = -100
-        # 步数未超出限制
+            # 基础成功奖励 + 速度奖励
+            reward = 100.0 + 50.0 * (self.max_steps - self.current_step) / self.max_steps
+        
+        # 2. 进度奖励 - 平滑的距离改进奖励
         elif self.current_step < self.max_steps:
-            # 计算奖励
-            # 到达目标
-            if distance_to_target < 0.5:
-                done = True
-                reward = 100 + 100 * (self.max_steps - self.current_step) / self.max_steps
-            # 没有到达目标
-            else:
-                if distance_to_target < self.prev_distance:
-                    reward = 1.0 * (self.prev_distance - distance_to_target)  # 提高过程奖励
-                # 距离扩大给负奖励
-                elif distance_to_target > self.prev_distance:
-                    reward = -1.5 * (distance_to_target - self.prev_distance)  # 平衡惩罚系数
-                elif distance_to_target == self.prev_distance:
-                    reward = -100
-        # 步数超出限制
-        else:
-            raise ValueError("Invalid step count")
-
+            # 基于距离的相对改进奖励 - 相对于当前剩余距离的比例
+            if distance_delta > 0:  # 接近目标
+                # 使用相对进步比例，避免在远处和近处奖励差异过大
+                relative_improvement = distance_delta / (self.prev_distance + 0.1)  # 添加小值避免除零
+                reward += 10.0 * relative_improvement
+            elif distance_delta < 0:  # 远离目标
+                # 惩罚远离，但不要惩罚过于严厉
+                relative_regression = -distance_delta / (self.prev_distance + 0.1)
+                reward -= 5.0 * relative_regression
+            else:  # 距离不变
+                # 轻微惩罚，鼓励探索而不是停留
+                reward -= 0.5
+                
+            # 3. 方向引导奖励 - 鼓励朝向目标方向的动作
+            if np.linalg.norm(action) > 0.1:  # 确保动作有意义的幅度
+                # 计算动作方向与目标方向的夹角余弦值
+                direction_to_target = self.target_position - self.agent_position
+                if np.linalg.norm(direction_to_target) > 0:
+                    direction_to_target = direction_to_target / np.linalg.norm(direction_to_target)
+                    action_direction = action / np.linalg.norm(action)
+                    direction_alignment = np.dot(direction_to_target, action_direction)
+                    
+                    # 奖励与目标方向一致的动作
+                    reward += 2.0 * direction_alignment
+                    
+            # 4. 时间压力 - 随着步数增加增加紧迫感
+            time_pressure = -0.1 * (self.current_step / self.max_steps)
+            reward += time_pressure
+            
+        # 5. 时间用尽惩罚
+        if self.current_step >= self.max_steps:
+            done = True
+            # 根据距离目标的远近给予不同程度的惩罚
+            reward = -10.0 * min(1.0, distance_to_target / 5.0)  # 限制最大惩罚值
+        
+        # --- 新的奖励设计结束 ---
+        
         self.prev_distance = distance_to_target
         info: Dict[str, float] = {
             "distance": distance_to_target,
@@ -650,12 +673,12 @@ if __name__ == "__main__":
     agent: ContinuousPolicyGradientAgent = ContinuousPolicyGradientAgent(
         state_dim=2,  # [x, y]
         action_dim=2,  # [dx, dy]
-        learning_rate=0.003,  # 降低学习率以增加稳定性
+        learning_rate=0.001,  # 降低学习率以配合新的奖励系统
         gamma=0.99,
     )
 
     # 训练智能体
-    rewards: List[float] = train(env, agent, episodes=10000, render_freq=50)
+    rewards: List[float] = train(env, agent, episodes=20000, render_freq=50)
 
     # 测试智能体
     test_agent(env, agent)
