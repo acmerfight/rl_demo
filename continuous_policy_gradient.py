@@ -390,7 +390,7 @@ class ContinuousPolicyGradientAgent:
             # 计算当前策略下动作的均值,上一次是在实际与环境交互时计算的
             # 更新策略时使用的是当前的策略参数，而不是执行动作时的参数
             action_mean: np.ndarray = self.compute_action_mean(state)
-    
+
             # 限制log_std的范围
             clipped_log_std: np.ndarray = np.clip(self.log_std, -5.0, 2.0)
             std: np.ndarray = np.exp(clipped_log_std)
@@ -409,7 +409,10 @@ class ContinuousPolicyGradientAgent:
             variance: np.ndarray = std**2
             mean_grad: np.ndarray = action_diff / variance
 
-            # 使用较小的学习率和裁剪梯度来防止更新过大
+            # 稳定训练过程：在策略梯度算法中，回报值可能差异很大，导致参数更新幅度不稳定,防止大回报引起的参数剧烈变化
+            # 基本公式: 学习率 × min(1.0, 1.0/(|G|+1.0))
+            # 当回报G绝对值较大时，学习率会被显著缩小
+            # 当回报G绝对值较小时，学习率接近原始值
             lr_scaled: float = self.learning_rate * min(1.0, 1.0 / (np.abs(G) + 1.0))
 
             # 权重梯度 = 状态向量 * mean_grad (外积)
