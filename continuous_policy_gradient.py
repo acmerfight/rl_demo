@@ -86,22 +86,22 @@ class TargetFindingEnv:
 
         # 计算到目标的距离
         distance_to_target: float = float(np.linalg.norm(self.agent_position - self.target_position))
-        
+
         # 计算距离变化
         distance_delta: float = self.prev_distance - distance_to_target
-        
+
         # 判断是否到达目标或超出步数限制
         done: bool = False
         reward: float = 0.0
-        
+
         # --- 新的奖励设计开始 ---
-        
+
         # 1. 到达目标的奖励 - 给予较大正奖励并奖励更快到达
         if distance_to_target < 0.5:
             done = True
             # 基础成功奖励 + 速度奖励
             reward = 100.0 + 50.0 * (self.max_steps - self.current_step) / self.max_steps
-        
+
         # 2. 进度奖励 - 平滑的距离改进奖励
         elif self.current_step < self.max_steps:
             # 基于距离的相对改进奖励 - 相对于当前剩余距离的比例
@@ -116,7 +116,7 @@ class TargetFindingEnv:
             else:  # 距离不变
                 # 轻微惩罚，鼓励探索而不是停留
                 reward -= 0.5
-                
+
             # 3. 方向引导奖励 - 鼓励朝向目标方向的动作
             if np.linalg.norm(action) > 0.1:  # 确保动作有意义的幅度
                 # 计算动作方向与目标方向的夹角余弦值
@@ -125,22 +125,22 @@ class TargetFindingEnv:
                     direction_to_target = direction_to_target / np.linalg.norm(direction_to_target)
                     action_direction = action / np.linalg.norm(action)
                     direction_alignment = np.dot(direction_to_target, action_direction)
-                    
+
                     # 奖励与目标方向一致的动作
                     reward += 2.0 * direction_alignment
-                    
+
             # 4. 时间压力 - 随着步数增加增加紧迫感
             time_pressure = -0.1 * (self.current_step / self.max_steps)
             reward += time_pressure
-            
+
         # 5. 时间用尽惩罚
         if self.current_step >= self.max_steps:
             done = True
             # 根据距离目标的远近给予不同程度的惩罚
             reward = -10.0 * min(1.0, distance_to_target / 5.0)  # 限制最大惩罚值
-        
+
         # --- 新的奖励设计结束 ---
-        
+
         self.prev_distance = distance_to_target
         info: Dict[str, float] = {
             "distance": distance_to_target,
@@ -235,7 +235,19 @@ class ContinuousPolicyGradientAgent:
         self.mean_bias: np.ndarray = np.zeros(action_dim)
 
         # 标准差参数 - 使用log_std以防止负值，初始为0对应标准差为1.0
-        self.log_std: np.ndarray = np.zeros(action_dim) - 0.5  # 初始标准差大约为0.6
+        # 正态分布是一种非常重要的概率分布，它有一个基本特性被称为"68-95-99.7规则"：
+        # 约68%的数据点落在[μ-σ, μ+σ]范围内
+        # 约95%的数据点落在[μ-2σ, μ+2σ]范围内
+        # 约99.7%的数据点落在[μ-3σ, μ+3σ]范围内
+        # action_mean是均值μ
+        # std是标准差σ，初始值约为0.6065
+        # 标准差 = e^(log_std) = e^(-0.5) ≈ 0.6065
+        # 环境的动作空间限制在[-1, 1]范围内
+        # 标准差0.6意味着大部分动作会限制在策略均值的±0.6范围内
+        # 有时会探索到±1.2范围（约占95%），但很少超过这个范围
+        # 初始0.6允许足够探索来发现有效策略
+        # 随着学习进行，算法可以自动降低标准差，专注于利用
+        self.log_std: np.ndarray = np.zeros(action_dim) - 0.5  # 初始标准差大约为0.6065
 
         # 轨迹记录
         self.states: List[np.ndarray] = []
