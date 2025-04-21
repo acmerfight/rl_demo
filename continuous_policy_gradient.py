@@ -387,9 +387,10 @@ class ContinuousPolicyGradientAgent:
             action: np.ndarray = self.actions[t]
             G: float = float(returns[t])
 
-            # 计算当前策略下动作的均值
+            # 计算当前策略下动作的均值,上一次是在实际与环境交互时计算的
+            # 更新策略时使用的是当前的策略参数，而不是执行动作时的参数
             action_mean: np.ndarray = self.compute_action_mean(state)
-
+    
             # 限制log_std的范围
             clipped_log_std: np.ndarray = np.clip(self.log_std, -5.0, 2.0)
             std: np.ndarray = np.exp(clipped_log_std)
