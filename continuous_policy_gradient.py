@@ -304,11 +304,11 @@ class ContinuousPolicyGradientAgent:
             # 根据均值和标准差采样动作，同时防止标准差过小或过大
             # 下限 -5.0：e^(-5.0) ≈ 0.0067 这接近于确定性策略（几乎没有探索）
             # 防止标准差变得过小导致：过早收敛到次优策略，数值不稳定（除以接近零的方差）
-            # 上限 2.0：e^(2.0) ≈ 7.39 这是非常大的探索度，防止标准差变得过大导致：完全随机的行为，学习过程不稳定，大的方差导致梯度爆炸
+            # 上限 2：e^(2) ≈ 7.39 这是较大的探索度，防止标准差变得过大导致：完全随机的行为，学习过程不稳定，大的方差导致梯度爆炸
             # 这个范围允许算法：在学习初期保持较高探索度，随着学习进行逐渐降低探索度，在收敛时达到较低的探索度，在需要时重新增加探索（如遇到新情况）
             # 数值稳定性考虑：过小的标准差会导致数值问题（如除以接近零的数），过大的标准差会导致梯度爆炸，该范围提供了良好的数值特性
             # 这种裁剪机制确保了探索-利用的平衡能够在合理范围内自动调整，是强化学习算法中的常见实践。
-            std: np.ndarray = np.exp(np.clip(self.log_std, -5.0, 2.0))  # 限制标准差范围
+            std: np.ndarray = np.exp(np.clip(self.log_std, -5.0, 2))  # 限制标准差范围
             # 生成随机噪声
             noise: np.ndarray = np.random.randn(self.action_dim)
             # 将噪声乘以标准差并加到均值上，得到最终的动作
@@ -392,7 +392,7 @@ class ContinuousPolicyGradientAgent:
             action_mean: np.ndarray = self.compute_action_mean(state)
 
             # 限制log_std的范围
-            clipped_log_std: np.ndarray = np.clip(self.log_std, -5.0, 2.0)
+            clipped_log_std: np.ndarray = np.clip(self.log_std, -5.0, 2)
             std: np.ndarray = np.exp(clipped_log_std)
 
             # 防止标准差太小导致除法不稳定
@@ -402,7 +402,7 @@ class ContinuousPolicyGradientAgent:
             action_diff: np.ndarray = action - action_mean
 
             # 避免出现非常大的差异
-            action_diff = np.clip(action_diff, -5.0, 5.0)
+            action_diff = np.clip(action_diff, -5.0, 2)
 
             # 1. 更新均值网络参数
             # 对数概率关于均值的梯度: (action - mean) / variance
@@ -463,7 +463,7 @@ class ContinuousPolicyGradientAgent:
             self.log_std += log_std_update
 
             # 确保log_std在合理范围内
-            self.log_std = np.clip(self.log_std, -5.0, 2.0)
+            self.log_std = np.clip(self.log_std, -5.0, 2)
 
         # 记录总奖励
         episode_reward: float = float(sum(self.rewards))
@@ -508,7 +508,7 @@ class ContinuousPolicyGradientAgent:
         ax.quiver(X, Y, U, V, scale=30, color="red", alpha=0.7)
 
         # 添加标准差信息
-        std_display: np.ndarray = np.exp(np.clip(self.log_std, -5.0, 2.0))
+        std_display: np.ndarray = np.exp(np.clip(self.log_std, -5.0, 2))
         ax.text(
             0.1,
             0.9,
@@ -565,17 +565,36 @@ def train(
     print("===== Start training continuous policy gradient agent =====")
 
     # 创建交互式绘图
-    fig: Figure = plt.figure(figsize=(12, 5))
+    fig: Figure = plt.figure(figsize=(15, 5))
 
     # 环境可视化
-    ax1: Axes = fig.add_subplot(1, 2, 1)
+    ax1: Axes = fig.add_subplot(1, 3, 1)
 
     # 训练进度可视化
-    ax2: Axes = fig.add_subplot(1, 2, 2)
+    ax2: Axes = fig.add_subplot(1, 3, 2)
     ax2.set_xlabel("Episode")
     ax2.set_ylabel("Total Reward")
     ax2.set_title("Training Progress")
-    plt.tight_layout()
+
+    # 探索度变化可视化
+    ax3: Axes = fig.add_subplot(1, 3, 3)
+    ax3.set_xlabel("Episode")
+    ax3.set_ylabel("Action Standard Deviation")
+    ax3.set_title("Exploration Rate")
+
+    # 记录每个episode的标准差
+    std_history = []
+
+    # 在更新策略后记录当前的标准差
+    std_display = np.exp(np.clip(agent.log_std, -5.0, 2))
+    std_history.append(std_display.copy())
+
+    # 在训练循环中更新标准差图
+    ax3.clear()
+    ax3.plot(range(len(std_history)), [std[0] for std in std_history], "g-", label="dx")
+    ax3.plot(range(len(std_history)), [std[1] for std in std_history], "m-", label="dy")
+    ax3.legend()
+    ax3.set_title("Exploration Rate")  # 重新设置标题
 
     episode_rewards: List[float] = []
 
@@ -615,13 +634,35 @@ def train(
         # 记录这一轮的总奖励
         episode_rewards.append(total_reward)
 
-        # 更新训练进度图
+        # 记录当前的标准差
+        std_display = np.exp(np.clip(agent.log_std, -5.0, 2))
+        std_history.append(std_display.copy())
+
+        # 更新训练进度图和标准差图
         if len(episode_rewards) > 1:
             ax2.clear()
-            ax2.plot(episode_rewards, "b-")
+            ax2.plot(episode_rewards, "b-", alpha=0.3, label="Raw")
+
+            # 添加移动平均线
+            window = min(50, len(episode_rewards))
+            if window > 1:
+                moving_avg = np.convolve(episode_rewards, np.ones(window) / window, mode="valid")
+                ax2.plot(range(window - 1, len(episode_rewards)), moving_avg, "r-", linewidth=2, label=f"{window}-ep Average")
+
             ax2.set_xlabel("Episode")
             ax2.set_ylabel("Total Reward")
             ax2.set_title("Training Progress")
+            ax2.legend(loc="upper left")
+
+            # 更新标准差图
+            ax3.clear()
+            ax3.plot(range(len(std_history)), [std[0] for std in std_history], "g-", label="dx")
+            ax3.plot(range(len(std_history)), [std[1] for std in std_history], "m-", label="dy")
+            ax3.set_xlabel("Episode")
+            ax3.set_ylabel("Action Standard Deviation")
+            ax3.set_title("Exploration Rate")
+            ax3.legend()
+
             plt.pause(0.01)
 
         # 打印训练信息
