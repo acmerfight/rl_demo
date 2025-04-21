@@ -429,7 +429,14 @@ class ContinuousPolicyGradientAgent:
                     weight_update = np.clip(weight_update, -0.1, 0.1)
                     self.mean_weights[i, j] += weight_update
 
-            # 偏置更新
+            # 偏置更新,可以通过求导得出这个公式,也可以如下通俗理解
+            # 想象我们有个公式：y = mx + b
+            # 当我们调整m(斜率)时，效果取决于x的值
+            # 当我们调整b(截距)时，效果与x无关，总是固定的垂直位移
+            # 同理，在策略梯度中：
+            # 权重(W)决定状态如何影响动作，所以更新依赖状态
+            # 偏置(b)是基础偏好，与状态无关，所以更新不依赖状态
+            # 这就是为什么偏置更新公式是 lr_scaled * G * mean_grad，而不需要包含状态项。
             bias_update: np.ndarray = lr_scaled * G * mean_grad
             # 裁剪更新值
             bias_update = np.clip(bias_update, -0.1, 0.1)
@@ -437,12 +444,20 @@ class ContinuousPolicyGradientAgent:
 
             # 2. 更新标准差参数
             # 对数概率关于log_std的梯度
+            # 对数概率关于log_std的梯度: (action - mean)**2 / variance - 1.0
+            # 这个公式表示：
+            # 1. 如果动作与均值的差异(action - mean)越大，梯度越大，表示需要调整log_std以增加该动作的概率
+            # 2. 如果方差(variance)越大，梯度越小，表示需要调整log_std以减少该动作的概率
+            # 3. 如果动作与均值的差异(action - mean)越小，梯度越小，表示需要调整log_std以增加该动作的概率
+            # 4. 如果方差(variance)越小，梯度越大，表示需要调整log_std以减少该动作的概率
             log_std_grad: np.ndarray = action_diff**2 / variance - 1.0
 
             # 裁剪梯度
             log_std_grad = np.clip(log_std_grad, -1.0, 1.0)
 
-            # 更新log_std参数，使用较小的学习率
+            # 更新log_std参数，使用较小的学习率，因为log_std的更新对策略的影响较小，需要先学习均值，再学习方差
+            # 第一阶段：基本掌握（学习均值） 想象你在学习打篮球：先学习基本投篮动作，反复练习直到动作基本正确，此时你专注于"做对基本动作"
+            # 第二阶段：探索变化（调整标准差） 掌握基本动作后：尝试不同角度投篮，尝试各种投篮技巧，此时你在"探索更多可能性"
             log_std_update: np.ndarray = lr_scaled * 0.5 * G * log_std_grad
             log_std_update = np.clip(log_std_update, -0.1, 0.1)
             self.log_std += log_std_update
