@@ -11,3 +11,6 @@ dependencies = [
 
 [tool.ruff]
 line-length = 128 
+
+[tool.uv.workspace]
+members = ["rl_demo"]

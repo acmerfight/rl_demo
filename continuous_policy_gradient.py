@@ -28,6 +28,8 @@ class TargetFindingEnv:
 
         # 智能体当前位置
         self.agent_position: Optional[np.ndarray] = None
+        # 智能体上一步位置
+        self.prev_position: Optional[np.ndarray] = None
 
         # 每个episode的最大步数
         self.max_steps: int = max_steps
@@ -54,6 +56,7 @@ class TargetFindingEnv:
                 break
 
         self.current_step = 0
+        self.prev_position = self.agent_position.copy()  # 初始化前一位置为当前位置
         self.prev_distance = float(np.linalg.norm(self.agent_position - self.target_position))
         return self.agent_position.copy()
 
@@ -83,62 +86,45 @@ class TargetFindingEnv:
         new_position[1] = np.clip(new_position[1], self.y_min, self.y_max)
 
         self.agent_position = new_position
-
+        self.prev_position = self.agent_position
         # 计算到目标的距离
         distance_to_target: float = float(np.linalg.norm(self.agent_position - self.target_position))
 
-        # 计算距离变化
-        distance_delta: float = self.prev_distance - distance_to_target
-
-        # 判断是否到达目标或超出步数限制
         done: bool = False
         reward: float = 0.0
 
         # --- 新的奖励设计开始 ---
 
-        # 1. 到达目标的奖励 - 给予较大正奖励并奖励更快到达
+        # 初始化奖励为0
+        reward = 0.0
+
+        # 1. 到达目标的奖励 - 给予较大正奖励, 并奖励更快到达
         if distance_to_target < 0.5:
             done = True
-            # 基础成功奖励 + 速度奖励
-            reward = 100.0 + 50.0 * (self.max_steps - self.current_step) / self.max_steps
+            # 基础奖励 + 步数奖励（步数越少奖励越高）
+            # 这样智能体会尽量用更少的步数到达目标
+            reward = 100.0 + 100 * (self.max_steps - self.current_step) / self.max_steps
+        else:
+            # 最后没有到达目标，根据与目标距离给予惩罚
+            if self.current_step >= self.max_steps:
+                done = True
+                # 基础惩罚 + 距离惩罚（距离越远惩罚越大）
+                # -50作为基础失败惩罚，距离作为额外惩罚因子
+                # 环境的最大对角线距离为sqrt(10^2+10^2)≈14.14
+                # 将距离归一化到[0,1]区间后乘以50作为额外惩罚
+                normalized_distance = distance_to_target / 14.14
+                reward = -50.0 - 50.0 * normalized_distance
 
-        # 2. 进度奖励 - 平滑的距离改进奖励
-        elif self.current_step < self.max_steps:
-            # 基于距离的相对改进奖励 - 相对于当前剩余距离的比例
-            if distance_delta > 0:  # 接近目标
-                # 使用相对进步比例，避免在远处和近处奖励差异过大
-                relative_improvement = distance_delta / (self.prev_distance + 0.1)  # 添加小值避免除零
-                reward += 10.0 * relative_improvement
-            elif distance_delta < 0:  # 远离目标
-                # 惩罚远离，但不要惩罚过于严厉
-                relative_regression = -distance_delta / (self.prev_distance + 0.1)
-                reward -= 5.0 * relative_regression
-            else:  # 距离不变
-                # 轻微惩罚，鼓励探索而不是停留
-                reward -= 0.5
-
-            # 3. 方向引导奖励 - 鼓励朝向目标方向的动作
-            if np.linalg.norm(action) > 0.1:  # 确保动作有意义的幅度
-                # 计算动作方向与目标方向的夹角余弦值
-                direction_to_target = self.target_position - self.agent_position
-                if np.linalg.norm(direction_to_target) > 0:
-                    direction_to_target = direction_to_target / np.linalg.norm(direction_to_target)
-                    action_direction = action / np.linalg.norm(action)
-                    direction_alignment = np.dot(direction_to_target, action_direction)
-
-                    # 奖励与目标方向一致的动作
-                    reward += 2.0 * direction_alignment
-
-            # 4. 时间压力 - 随着步数增加增加紧迫感
-            time_pressure = -0.1 * (self.current_step / self.max_steps)
-            reward += time_pressure
-
-        # 5. 时间用尽惩罚
-        if self.current_step >= self.max_steps:
-            done = True
-            # 根据距离目标的远近给予不同程度的惩罚
-            reward = -10.0 * min(1.0, distance_to_target / 5.0)  # 限制最大惩罚值
-
+        # 如果尝试超过边界，给以额外惩罚
+        if (self.agent_position[0] <= self.x_min or 
+            self.agent_position[0] >= self.x_max or 
+            self.agent_position[1] <= self.y_min or 
+            self.agent_position[1] >= self.y_max):
+            reward -= 1.0
+        
+        # 如果position没有变化，给以额外惩罚 
+        if np.allclose(self.agent_position, self.prev_position):
+            reward -= 1.0
         # --- 新的奖励设计结束 ---
 
         self.prev_distance = distance_to_target
