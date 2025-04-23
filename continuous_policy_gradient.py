@@ -1,10 +1,23 @@
+
+# 当使用权重矩阵[[-0.1, 0], [0, -0.1]]和偏置[0.8, 0.8]时，智能体必然沿直线到达目标(8,8)。这是因为：
+# 数学原理
+# 动作计算公式：[0.8-0.1x, 0.8-0.1y]
+# 对任意位置(x,y)：
+# 动作方向永远指向目标点(8,8)
+# 这个方向就是从当前点到(8,8)的直线
+# 简单证明
+# 从(x,y)到(8,8)的直线方向向量应该是:
+# [8-x, 8-y]
+# 我们计算的动作是:
+# [0.8-0.1x, 0.8-0.1y] = [0.8-0.1x, 0.8-0.1y] = [0.1(8-x), 0.1(8-y)]
+# 这正是指向目标的直线方向，只是大小变成了原始方向的0.1倍！
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Arrow
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from time import sleep
-from typing import List, Dict, Tuple, Optional, Any, Union, Sequence
+from typing import List, Dict, Tuple, Optional
 
 
 # 2D目标寻找环境 - 连续动作空间示例
@@ -563,25 +576,35 @@ def train(
     print("===== Start training continuous policy gradient agent =====")
 
     # 创建交互式绘图
-    fig: Figure = plt.figure(figsize=(15, 5))
+    fig: Figure = plt.figure(figsize=(15, 10))
 
     # 环境可视化
-    ax1: Axes = fig.add_subplot(1, 3, 1)
+    ax1: Axes = fig.add_subplot(2, 2, 1)
 
     # 训练进度可视化
-    ax2: Axes = fig.add_subplot(1, 3, 2)
+    ax2: Axes = fig.add_subplot(2, 2, 2)
     ax2.set_xlabel("Episode")
     ax2.set_ylabel("Total Reward")
     ax2.set_title("Training Progress")
 
     # 探索度变化可视化
-    ax3: Axes = fig.add_subplot(1, 3, 3)
+    ax3: Axes = fig.add_subplot(2, 2, 3)
     ax3.set_xlabel("Episode")
     ax3.set_ylabel("Action Standard Deviation")
     ax3.set_title("Exploration Rate")
+    
+    # 成功率可视化
+    ax4: Axes = fig.add_subplot(2, 2, 4)
+    ax4.set_xlabel("Episode")
+    ax4.set_ylabel("Success Rate (%)")
+    ax4.set_title("Success Rate")
+    ax4.set_ylim(0, 100)
 
     # 记录每个episode的标准差
     std_history = []
+
+    # 记录每个episode是否成功到达目标
+    success_history = []
 
     # 在更新策略后记录当前的标准差
     std_display = np.exp(np.clip(agent.log_std, -5.0, 2))
@@ -601,6 +624,7 @@ def train(
         state: np.ndarray = env.reset()
         total_reward: float = 0.0
         done: bool = False
+        episode_success: bool = False
 
         # 如果是可视化轮次，则绘制初始状态
         should_render: bool = episode % render_freq == 0
@@ -611,6 +635,10 @@ def train(
 
             # 执行动作
             next_state, reward, done, info = env.step(action)
+            
+            # 检查是否成功到达目标
+            if done and info["distance"] < 0.5:
+                episode_success = True
 
             # 存储轨迹
             agent.store_transition(state, action, reward)
@@ -631,6 +659,9 @@ def train(
 
         # 记录这一轮的总奖励
         episode_rewards.append(total_reward)
+        
+        # 记录这一轮是否成功
+        success_history.append(int(episode_success))
 
         # 记录当前的标准差
         std_display = np.exp(np.clip(agent.log_std, -5.0, 2))
@@ -660,7 +691,25 @@ def train(
             ax3.set_ylabel("Action Standard Deviation")
             ax3.set_title("Exploration Rate")
             ax3.legend()
+            
+            # 更新成功率图
+            ax4.clear()
+            if len(success_history) >= render_freq:
+                # 计算最近render_freq个episode的成功率
+                success_rates = []
+                for i in range(render_freq, len(success_history) + 1):
+                    recent_success = success_history[i - render_freq:i]
+                    success_rate = 100 * sum(recent_success) / render_freq
+                    success_rates.append(success_rate)
+                
+                ax4.plot(range(render_freq - 1, len(success_history)), success_rates, "g-", linewidth=2)
+                ax4.set_xlabel("Episode")
+                ax4.set_ylabel("Success Rate (%)")
+                ax4.set_title(f"Success Rate (last {render_freq} episodes)")
+                ax4.set_ylim(0, 100)
+                ax4.grid(True)
 
+            plt.tight_layout()
             plt.pause(0.01)
 
         # 打印训练信息
@@ -669,7 +718,19 @@ def train(
             start_index = max(0, episode - render_freq + 1)
             recent_rewards = episode_rewards[start_index : episode + 1]
             avg_reward = np.mean(recent_rewards) if recent_rewards else 0.0
-            print(f"Episode {episode + 1}/{episodes}, Avg Reward (last {len(recent_rewards)} episodes): {avg_reward:.2f}")
+            
+            # 计算最近 render_freq 个 episode 的成功率
+            # 用与图表相同的计算方式，确保一致性
+            if episode >= render_freq - 1:
+                # 有足够的历史数据时，使用完整的render_freq个episodes
+                recent_success = success_history[episode - render_freq + 1:episode + 1]
+                success_rate = 100 * sum(recent_success) / render_freq
+            else:
+                # 训练初期，使用所有可用数据
+                recent_success = success_history[:episode + 1]
+                success_rate = 100 * sum(recent_success) / len(recent_success) if recent_success else 0.0
+            
+            print(f"Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, Success Rate: {success_rate:.1f}%")
 
             # 在环境中显示策略
             env.render(ax=ax1, clear=False)
@@ -709,7 +770,7 @@ def test_agent(
 
         while not done:
             # 测试时使用确定性策略
-            action: np.ndarray = agent.get_action(state, explore=True)
+            action: np.ndarray = agent.get_action(state, explore=False)
 
             # 执行动作
             next_state, reward, done, info = env.step(action)
