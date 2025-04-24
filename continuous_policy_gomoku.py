@@ -419,7 +419,7 @@ class ContinuousPolicyGomokuAgent:
             
             # Gradient of log probability with respect to mean
             # Correct formula: ∇_μ log π(a|s) = (a - μ) / σ²
-            mean_grad = action_diff / variance
+            mean_grad = action_diff / (variance + 1e-6)
             
             # Gradient of log probability with respect to log_std
             # Correct formula: ∇_log σ log π(a|s) = ((a - μ)²/σ² - 1) / 2
