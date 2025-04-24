@@ -297,15 +297,15 @@ class ContinuousPolicyGomokuAgent:
         
         # Policy network parameters (3-layer neural network)
         # Input layer -> Hidden layer
-        self.w1 = np.random.randn(self.state_dim, hidden_dim) * 0.01
+        self.w1 = np.random.randn(self.state_dim, hidden_dim) * np.sqrt(2 / self.state_dim)
         self.b1 = np.zeros(hidden_dim)
         
         # Hidden layer -> Hidden layer
-        self.w2 = np.random.randn(hidden_dim, hidden_dim) * 0.01
+        self.w2 = np.random.randn(hidden_dim, hidden_dim) * np.sqrt(2 / hidden_dim)
         self.b2 = np.zeros(hidden_dim)
         
         # Hidden layer -> Output layer (action mean)
-        self.w3 = np.random.randn(hidden_dim, self.action_dim) * 0.01
+        self.w3 = np.random.randn(hidden_dim, self.action_dim) * np.sqrt(2 / hidden_dim)
         self.b3 = np.zeros(self.action_dim)
         
         # Standard deviation parameters - using log_std to prevent negative values
