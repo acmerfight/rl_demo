@@ -825,7 +825,7 @@ if __name__ == "__main__":
     )
 
     # 训练智能体
-    rewards: List[float] = train(env, agent, episodes=20000, render_freq=50)
+    rewards: List[float] = train(env, agent, episodes=10000, render_freq=50)
 
     # 测试智能体
     test_agent(env, agent)
