@@ -414,12 +414,12 @@ class ContinuousPolicyGomokuAgent:
             
             # Calculate log probability gradients
             std = np.exp(np.clip(self.log_std, -5.0, 2.0))
-            variance = std ** 2
+            variance = std ** 2 + 1e-6  # 添加小常数防止除零
             action_diff = action - mean
             
             # Gradient of log probability with respect to mean
             # Correct formula: ∇_μ log π(a|s) = (a - μ) / σ²
-            mean_grad = action_diff / (variance + 1e-6)
+            mean_grad = action_diff / variance
             
             # Gradient of log probability with respect to log_std
             # Correct formula: ∇_log σ log π(a|s) = ((a - μ)²/σ² - 1) / 2
