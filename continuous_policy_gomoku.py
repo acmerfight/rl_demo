@@ -445,6 +445,16 @@ class ContinuousPolicyGomokuAgent:
             # Accumulate log_std gradient
             dlog_std += log_std_grad * G
         
+        # Normalize gradients by batch size
+        batch_size = len(self.states)
+        dw1 /= batch_size
+        db1 /= batch_size
+        dw2 /= batch_size
+        db2 /= batch_size
+        dw3 /= batch_size
+        db3 /= batch_size
+        dlog_std /= batch_size
+        
         # Apply gradients (with clipping)
         lr = self.learning_rate
         
