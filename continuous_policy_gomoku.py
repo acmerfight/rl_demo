@@ -451,7 +451,7 @@ class ContinuousPolicyGomokuAgent:
         self.b2 += lr * np.clip(db2, -1.0, 1.0)
         self.w3 += lr * np.clip(dw3, -1.0, 1.0)
         self.b3 += lr * np.clip(db3, -1.0, 1.0)
-        self.log_std += lr * 0.1 * np.clip(dlog_std, -0.1, 0.1)
+        self.log_std += lr * 0.5 * np.clip(dlog_std, -1.0, 1.0)
         
         # Limit standard deviation range
         self.log_std = np.clip(self.log_std, -5.0, 2.0)
