@@ -412,13 +412,18 @@ class ContinuousPolicyGomokuAgent:
             h2 = self._relu(np.dot(h1, self.w2) + self.b2)
             mean = self._tanh(np.dot(h2, self.w3) + self.b3)
             
-            # Calculate difference between action and mean
+            # Calculate log probability gradients
             std = np.exp(np.clip(self.log_std, -5.0, 2.0))
             variance = std ** 2
             action_diff = action - mean
             
-            # Calculate log probability gradient
+            # Gradient of log probability with respect to mean
+            # Correct formula: ∇_μ log π(a|s) = (a - μ) / σ²
             mean_grad = action_diff / variance
+            
+            # Gradient of log probability with respect to log_std
+            # Correct formula: ∇_log σ log π(a|s) = ((a - μ)²/σ² - 1) / 2
+            log_std_grad = 0.5 * ((action_diff ** 2) / variance - 1.0)
             
             # Backpropagation - output layer gradient
             dz3 = mean_grad * (1 - mean ** 2)  # Tanh derivative: 1 - tanh^2(x)
@@ -437,9 +442,8 @@ class ContinuousPolicyGomokuAgent:
             dw1 += np.outer(state, dz1) * G
             db1 += dz1 * G
             
-            # Standard deviation gradient
-            log_std_grad = (action_diff ** 2) / variance - 1.0
-            dlog_std += 0.5 * G * log_std_grad
+            # Accumulate log_std gradient
+            dlog_std += log_std_grad * G
         
         # Apply gradients (with clipping)
         lr = self.learning_rate
@@ -451,7 +455,7 @@ class ContinuousPolicyGomokuAgent:
         self.b2 += lr * np.clip(db2, -1.0, 1.0)
         self.w3 += lr * np.clip(dw3, -1.0, 1.0)
         self.b3 += lr * np.clip(db3, -1.0, 1.0)
-        self.log_std += lr * 0.5 * np.clip(dlog_std, -1.0, 1.0)
+        self.log_std += lr * np.clip(dlog_std, -1.0, 1.0)
         
         # Limit standard deviation range
         self.log_std = np.clip(self.log_std, -5.0, 2.0)
