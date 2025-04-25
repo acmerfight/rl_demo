@@ -110,7 +110,7 @@ class GomokuEnv:
             reward = 1.0  # 获胜奖励
         elif draw:
             self.done = True
-            reward = 0.1  # 平局奖励
+            reward = -0.1  # 平局奖励
         else:
             # 切换玩家
             self.current_player *= -1
