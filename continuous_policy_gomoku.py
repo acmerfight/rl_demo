@@ -303,8 +303,17 @@ class DiscretePolicyGomokuAgent:
         exp_x = np.exp(x)
         return exp_x / np.sum(exp_x)
     
-    def compute_action_probs(self, state: np.ndarray, valid_moves: np.ndarray = None) -> np.ndarray:
-        """计算动作概率分布"""
+    def compute_action_probs(self, state: np.ndarray, valid_moves: np.ndarray) -> np.ndarray:
+        """
+        计算动作概率分布
+        
+        参数:
+        - state: 当前状态
+        - valid_moves: 有效动作列表（必须提供）
+        
+        返回:
+        - probs: 动作概率分布
+        """
         # 确保状态格式正确
         state = state.flatten()
         
@@ -316,38 +325,51 @@ class DiscretePolicyGomokuAgent:
         # 计算所有动作的概率
         probs = self._softmax(logits)
         
-        # 如果提供了有效动作，只保留有效动作的概率并重新归一化
-        if valid_moves is not None and len(valid_moves) > 0:
-            # 创建掩码
-            mask = np.zeros(self.action_dim)
-            mask[valid_moves] = 1
-            
-            # 应用掩码
-            masked_probs = probs * mask
-            
-            # 重新归一化
-            if np.sum(masked_probs) > 0:
-                probs = masked_probs / np.sum(masked_probs)
-            else:
-                # 如果没有有效动作的概率，均匀分配到所有有效动作
-                probs = np.zeros(self.action_dim)
-                probs[valid_moves] = 1.0 / len(valid_moves)
+        # 应用动作掩码，只保留有效动作的概率
+        # 创建掩码
+        mask = np.zeros(self.action_dim)
+        mask[valid_moves] = 1
+        
+        # 应用掩码
+        masked_probs = probs * mask
+        
+        # 重新归一化
+        if np.sum(masked_probs) > 0:
+            probs = masked_probs / np.sum(masked_probs)
+        else:
+            # 如果没有有效动作的概率，均匀分配到所有有效动作
+            probs = np.zeros(self.action_dim)
+            probs[valid_moves] = 1.0 / len(valid_moves)
         
         return probs
     
-    def get_action(self, state: np.ndarray, valid_moves: np.ndarray = None, explore: bool = True) -> int:
-        """根据策略选择动作"""
+    def get_action(self, state: np.ndarray, valid_moves: np.ndarray, explore: bool = True) -> int:
+        """
+        根据策略选择动作
+        
+        参数:
+        - state: 当前状态
+        - valid_moves: 有效动作列表（必须提供）
+        - explore: 是否启用探索
+        
+        返回:
+        - action: 选择的动作索引
+        """
         # 计算动作概率
         probs = self.compute_action_probs(state, valid_moves)
         
         if explore:
             # 基于概率分布采样动作
             action = np.random.choice(self.action_dim, p=probs)
+            
+            # 确保动作有效
+            if action not in valid_moves and len(valid_moves) > 0:
+                action = valid_moves[0]
         else:
             # 测试模式，选择最高概率的动作
             action = np.argmax(probs)
-            # 如果提供了有效动作列表，确保动作有效
-            if valid_moves is not None and action not in valid_moves and len(valid_moves) > 0:
+            # 确保动作有效
+            if action not in valid_moves and len(valid_moves) > 0:
                 action = valid_moves[0]
         
         return action
