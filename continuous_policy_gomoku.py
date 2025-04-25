@@ -260,10 +260,10 @@ class GomokuEnv:
 
 class ContinuousPolicyGomokuAgent:
     """
-    Continuous Policy Gradient Agent for Gomoku
+    五子棋连续策略梯度智能体
     
-    Uses Gaussian policy (normal distribution) to represent continuous actions
-    Policy parameters include mean network and standard deviation
+    使用高斯策略（正态分布）来表示连续动作空间
+    策略参数包括均值网络和标准差
     """
     
     def __init__(
@@ -275,108 +275,109 @@ class ContinuousPolicyGomokuAgent:
         gamma: float = 0.99,
     ) -> None:
         """
-        Initialize Gomoku agent
+        初始化五子棋智能体
         
-        Parameters:
-        - board_size: Size of the board
-        - hidden_dim: Hidden layer dimension
-        - learning_rate: Learning rate
-        - gamma: Discount factor
+        参数:
+        - board_size: 棋盘大小
+        - hidden_dim: 隐藏层维度
+        - learning_rate: 学习率
+        - learning_rate_log_std_factor: 标准差学习率因子
+        - gamma: 折扣因子
         """
         self.board_size = board_size
         self.learning_rate = learning_rate
         self.learning_rate_log_std_factor = learning_rate_log_std_factor
         self.gamma = gamma
         
-        # State dimension: 3 channels (black positions, white positions, current player)
+        # 状态维度: 3个通道(黑棋位置, 白棋位置, 当前玩家)
         self.state_dim = 3 * board_size * board_size
         
-        # Action dimension: 2 (x, y)
+        # 动作维度: 2 (x, y)
         self.action_dim = 2
         
-        # Hidden layer dimension
+        # 隐藏层维度
         self.hidden_dim = hidden_dim
         
-        # Policy network parameters (3-layer neural network)
-        # Input layer -> Hidden layer
+        # 策略网络参数 (3层神经网络)
+        # 输入层 -> 隐藏层
         self.w1 = np.random.randn(self.state_dim, hidden_dim) * np.sqrt(2 / self.state_dim)
         self.b1 = np.zeros(hidden_dim)
         
-        # Hidden layer -> Hidden layer
+        # 隐藏层 -> 隐藏层
         self.w2 = np.random.randn(hidden_dim, hidden_dim) * np.sqrt(2 / hidden_dim)
         self.b2 = np.zeros(hidden_dim)
         
-        # Hidden layer -> Output layer (action mean)
+        # 隐藏层 -> 输出层 (动作均值)
         self.w3 = np.random.randn(hidden_dim, self.action_dim) * np.sqrt(2 / hidden_dim)
         self.b3 = np.zeros(self.action_dim)
         
-        # Standard deviation parameters - using log_std to prevent negative values
-        self.log_std = np.zeros(self.action_dim) - 0.5  # Initial std approx 0.6
+        # 标准差参数 - 使用log_std防止负值
+        self.log_std = np.zeros(self.action_dim) - 0.5  # 初始标准差约为0.6
         
-        # Trajectory records
+        # 轨迹记录
         self.states = []
         self.actions = []
         self.rewards = []
         
-        # Training history
+        # 训练历史
         self.episode_rewards = []
     
     def _relu(self, x: np.ndarray) -> np.ndarray:
-        """ReLU activation function"""
+        """ReLU激活函数"""
         return np.maximum(0, x)
     
     def _tanh(self, x: np.ndarray) -> np.ndarray:
-        """Tanh activation function"""
+        """Tanh激活函数"""
         return np.tanh(x)
     
     def compute_action_mean(self, state: np.ndarray) -> np.ndarray:
-        """Calculate action mean"""
-        # Ensure state has correct format
+        """计算动作均值"""
+        # 确保状态格式正确
         state = state.flatten()
         
-        # Forward propagation
+        # 前向传播
         h1 = self._relu(np.dot(state, self.w1) + self.b1)
         h2 = self._relu(np.dot(h1, self.w2) + self.b2)
-        mean = self._tanh(np.dot(h2, self.w3) + self.b3)  # Tanh output range [-1,1]
+        mean = self._tanh(np.dot(h2, self.w3) + self.b3)  # Tanh输出范围[-1,1]
         
         return mean
     
     def get_action(self, state: np.ndarray, explore: bool = True) -> np.ndarray:
-        """Select action based on policy"""
-        # Calculate action mean
+        """根据策略选择动作"""
+        # 计算动作均值
         action_mean = self.compute_action_mean(state)
         
         if explore:
-            # Sample action based on mean and std
+            # 基于均值和标准差采样动作
             std = np.exp(np.clip(self.log_std, -5.0, 2.0))
             noise = np.random.randn(self.action_dim)
             action = action_mean + noise * std
             
-            # Clip action to [-1, 1] range
+            # 将动作限制在[-1, 1]范围内
             action = np.clip(action, -1.0, 1.0)
         else:
-            # Test mode, use mean directly
+            # 测试模式，直接使用均值
             action = action_mean
         
         return action
     
     def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float) -> None:
-        """Store one step trajectory"""
+        """存储一步轨迹"""
         self.states.append(state.copy())
         self.actions.append(action.copy())
         self.rewards.append(reward)
     
     def compute_returns(self) -> np.ndarray:
-        """Calculate returns (discounted cumulative rewards) for each step"""
+        """计算每一步的回报(折扣累积奖励)"""
         returns = []
         G = 0.0
         
-        # Calculate returns backward
+        # 从后往前计算回报
         for r in reversed(self.rewards):
             G = r + self.gamma * G
             returns.insert(0, G)
         
-        # Normalize returns
+        # 归一化回报
         returns_array = np.array(returns)
         if len(returns_array) > 1:
             returns_mean = np.mean(returns_array)
@@ -387,14 +388,14 @@ class ContinuousPolicyGomokuAgent:
         return returns_array
     
     def update_policy(self) -> None:
-        """Update policy parameters"""
+        """更新策略参数"""
         if len(self.states) == 0:
             return
         
-        # Calculate returns
+        # 计算回报
         returns = self.compute_returns()
         
-        # Initialize gradients
+        # 初始化梯度
         dw1 = np.zeros_like(self.w1)
         db1 = np.zeros_like(self.b1)
         dw2 = np.zeros_like(self.w2)
@@ -403,51 +404,50 @@ class ContinuousPolicyGomokuAgent:
         db3 = np.zeros_like(self.b3)
         dlog_std = np.zeros_like(self.log_std)
         
-        # Calculate gradients for each experience
+        # 为每个经验计算梯度
         for t in range(len(self.states)):
             state = self.states[t].flatten()
             action = self.actions[t]
             G = returns[t]
             
-            # Forward propagation
+            # 前向传播
             h1 = self._relu(np.dot(state, self.w1) + self.b1)
             h2 = self._relu(np.dot(h1, self.w2) + self.b2)
             mean = self._tanh(np.dot(h2, self.w3) + self.b3)
             
-            # Calculate log probability gradients
+            # 计算对数概率梯度
             std = np.exp(np.clip(self.log_std, -5.0, 2.0))
             variance = std ** 2 + 1e-6  # 添加小常数防止除零
             action_diff = action - mean
             
-            # Gradient of log probability with respect to mean
-            # Correct formula: ∇_μ log π(a|s) = (a - μ) / σ²
+            # 均值对数概率梯度
+            # 正确公式: ∇_μ log π(a|s) = (a - μ) / σ²
             mean_grad = action_diff / variance
             
-            # Gradient of log probability with respect to log_std
-            # Correct formula: ∇_log σ log π(a|s) = ((a - μ)²/σ² - 1) / 2
+            # log_std对数概率梯度
             log_std_grad = ((action_diff ** 2) / variance - 1.0)
             
-            # Backpropagation - output layer gradient
-            dz3 = mean_grad * (1 - mean ** 2)  # Tanh derivative: 1 - tanh^2(x)
+            # 反向传播 - 输出层梯度
+            dz3 = mean_grad * (1 - mean ** 2)  # Tanh导数: 1 - tanh^2(x)
             dw3 += np.outer(h2, dz3) * G
             db3 += dz3 * G
             
-            # Backpropagation - hidden layer gradient
+            # 反向传播 - 隐藏层梯度
             dh2 = np.dot(dz3, self.w3.T)
-            dz2 = dh2 * (h2 > 0)  # ReLU derivative
+            dz2 = dh2 * (h2 > 0)  # ReLU导数
             dw2 += np.outer(h1, dz2) * G
             db2 += dz2 * G
             
-            # Backpropagation - input layer gradient
+            # 反向传播 - 输入层梯度
             dh1 = np.dot(dz2, self.w2.T)
-            dz1 = dh1 * (h1 > 0)  # ReLU derivative
+            dz1 = dh1 * (h1 > 0)  # ReLU导数
             dw1 += np.outer(state, dz1) * G
             db1 += dz1 * G
             
-            # Accumulate log_std gradient
+            # 累积log_std梯度
             dlog_std += log_std_grad * G
         
-        # Normalize gradients by batch size
+        # 按批次大小归一化梯度
         batch_size = len(self.states)
         dw1 /= batch_size
         db1 /= batch_size
@@ -457,10 +457,10 @@ class ContinuousPolicyGomokuAgent:
         db3 /= batch_size
         dlog_std /= batch_size
         
-        # Apply gradients (with clipping)
+        # 应用梯度(带裁剪)
         lr = self.learning_rate
         
-        # Clip and apply gradients
+        # 裁剪并应用梯度
         self.w1 += lr * np.clip(dw1, -1.0, 1.0)
         self.b1 += lr * np.clip(db1, -1.0, 1.0)
         self.w2 += lr * np.clip(dw2, -1.0, 1.0)
@@ -469,14 +469,14 @@ class ContinuousPolicyGomokuAgent:
         self.b3 += lr * np.clip(db3, -1.0, 1.0)
         self.log_std += lr * self.learning_rate_log_std_factor * np.clip(dlog_std, -1.0, 1.0)
         
-        # Limit standard deviation range
+        # 限制标准差范围
         self.log_std = np.clip(self.log_std, -5.0, 2.0)
         
-        # Record total reward for this episode
+        # 记录本回合的总奖励
         episode_reward = sum(self.rewards)
         self.episode_rewards.append(episode_reward)
         
-        # Clear history
+        # 清空历史记录
         self.states = []
         self.actions = []
         self.rewards = []
