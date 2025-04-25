@@ -425,7 +425,7 @@ class ContinuousPolicyGomokuAgent:
             
             # Gradient of log probability with respect to log_std
             # Correct formula: ∇_log σ log π(a|s) = ((a - μ)²/σ² - 1) / 2
-            log_std_grad = self.learning_rate_log_std_factor * ((action_diff ** 2) / variance - 1.0)
+            log_std_grad = ((action_diff ** 2) / variance - 1.0)
             
             # Backpropagation - output layer gradient
             dz3 = mean_grad * (1 - mean ** 2)  # Tanh derivative: 1 - tanh^2(x)
@@ -467,7 +467,7 @@ class ContinuousPolicyGomokuAgent:
         self.b2 += lr * np.clip(db2, -1.0, 1.0)
         self.w3 += lr * np.clip(dw3, -1.0, 1.0)
         self.b3 += lr * np.clip(db3, -1.0, 1.0)
-        self.log_std += lr * np.clip(dlog_std, -1.0, 1.0)
+        self.log_std += lr * self.learning_rate_log_std_factor * np.clip(dlog_std, -1.0, 1.0)
         
         # Limit standard deviation range
         self.log_std = np.clip(self.log_std, -5.0, 2.0)
