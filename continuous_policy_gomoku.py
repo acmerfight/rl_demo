@@ -113,7 +113,6 @@ class GomokuEnv:
                 x = action // self.board_size
                 y = action % self.board_size
             else:
-                # 如果没有有效位置（极少发生）
                 raise RuntimeError("No valid moves available but game is not marked as done. This indicates a bug in the game logic.")
         
         # 执行动作
