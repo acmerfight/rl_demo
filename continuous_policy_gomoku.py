@@ -271,6 +271,7 @@ class ContinuousPolicyGomokuAgent:
         board_size: int,
         hidden_dim: int = 128,
         learning_rate: float = 0.001,
+        learning_rate_log_std_factor: float = 0.1,
         gamma: float = 0.99,
     ) -> None:
         """
@@ -284,6 +285,7 @@ class ContinuousPolicyGomokuAgent:
         """
         self.board_size = board_size
         self.learning_rate = learning_rate
+        self.learning_rate_log_std_factor = learning_rate_log_std_factor
         self.gamma = gamma
         
         # State dimension: 3 channels (black positions, white positions, current player)
@@ -423,7 +425,7 @@ class ContinuousPolicyGomokuAgent:
             
             # Gradient of log probability with respect to log_std
             # Correct formula: ∇_log σ log π(a|s) = ((a - μ)²/σ² - 1) / 2
-            log_std_grad = 0.5 * ((action_diff ** 2) / variance - 1.0)
+            log_std_grad = self.learning_rate_log_std_factor * ((action_diff ** 2) / variance - 1.0)
             
             # Backpropagation - output layer gradient
             dz3 = mean_grad * (1 - mean ** 2)  # Tanh derivative: 1 - tanh^2(x)
