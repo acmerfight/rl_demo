@@ -13,26 +13,49 @@ class GomokuEnv:
     动作(Action): 离散值，表示放置棋子的位置索引 (0 到 board_size*board_size-1)
     """
     
-    def __init__(self, board_size: int = 15) -> None:
+    def __init__(self, board_size: int = 15, agent_perspective: int = 1) -> None:
+        """
+        初始化五子棋环境
+        
+        参数:
+        - board_size: 棋盘大小
+        - agent_perspective: 从哪方视角计算奖励 (1 代表黑棋视角, -1 代表白棋视角)
+        """
         self.board_size = board_size
         self.board = np.zeros((board_size, board_size), dtype=np.int8)
         self.current_player = 1  # 1 代表黑棋, -1 代表白棋
         self.done = False
         self.winner = 0
         self.last_move = None
+        self.agent_perspective = agent_perspective  # 从哪方视角计算奖励
         
         # 用于可视化
         self.history = []
     
-    def reset(self) -> np.ndarray:
-        """重置游戏环境"""
+    def reset(self, agent_perspective: int = None) -> np.ndarray:
+        """
+        重置游戏环境
+        
+        参数:
+        - agent_perspective: 可选，重置智能体视角
+        """
         self.board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
         self.current_player = 1
         self.done = False
         self.winner = 0
         self.last_move = None
         self.history = []
+        
+        # 如果提供了新的视角，则更新
+        if agent_perspective is not None:
+            self.agent_perspective = agent_perspective
+            
         return self._get_state()
+    
+    def set_agent_perspective(self, agent_perspective: int) -> None:
+        """设置智能体视角 (1 或 -1)"""
+        assert agent_perspective in [1, -1], "agent_perspective must be either 1 (black) or -1 (white)"
+        self.agent_perspective = agent_perspective
     
     def _get_state(self) -> np.ndarray:
         """
@@ -67,7 +90,7 @@ class GomokuEnv:
         
         返回:
         - state: 新状态
-        - reward: 奖励
+        - reward: 奖励（从agent_perspective视角计算）
         - done: 游戏是否结束
         - info: 额外信息
         """
@@ -91,7 +114,7 @@ class GomokuEnv:
                 y = action % self.board_size
             else:
                 # 如果没有有效位置（极少发生）
-                return self._get_state(), -0.1, False, {'invalid_move': True}
+                raise RuntimeError("No valid moves available but game is not marked as done. This indicates a bug in the game logic.")
         
         # 执行动作
         self.board[x, y] = self.current_player
@@ -102,20 +125,28 @@ class GomokuEnv:
         win = self._check_win(x, y)
         draw = np.count_nonzero(self.board) == self.board_size ** 2
         
+        # 从智能体视角计算奖励
         reward = 0.0
+        info = {'winner': 0, 'position': (x, y)}
         
         if win:
             self.done = True
             self.winner = self.current_player
-            reward = 1.0  # 获胜奖励
+            info['winner'] = self.winner
+            
+            # 计算智能体视角的奖励
+            reward = 1.0 if self.current_player == self.agent_perspective else -1.0
+            
         elif draw:
             self.done = True
-            reward = -0.1  # 平局奖励
+            # 平局奖励（稍微负一点，鼓励智能体追求胜利）
+            reward = -0.1
+            
         else:
-            # 切换玩家
+            # 游戏继续, 切换玩家
             self.current_player *= -1
         
-        return self._get_state(), reward, self.done, {'winner': self.winner, 'position': (x, y)}
+        return self._get_state(), reward, self.done, info
     
     def _check_win(self, x: int, y: int) -> bool:
         """
@@ -446,12 +477,12 @@ def test_agent_vs_random(
     draw_count = 0
     
     for game in range(games):
-        # Reset environment
-        state = env.reset()
-        done = False
-        
         # Decide if agent plays first or second
         agent_player = 1 if np.random.random() < 0.5 else -1
+        
+        # Reset environment with the agent perspective
+        state = env.reset(agent_perspective=agent_player)
+        done = False
         
         print(f"\nGame {game+1}, Agent plays {'black' if agent_player == 1 else 'white'}")
         ax = env.render(ax=ax)
@@ -515,16 +546,16 @@ def test_agent_vs_human(
     plt.figure(figsize=(10, 10))
     ax = plt.gca()
     
-    # Reset environment
-    state = env.reset()
-    done = False
-    
     # Decide who plays first
     print("Do you want to play black (first) or white (second)?")
     user_color = input("Enter 'b' for black, 'w' for white: ").lower()
     
     agent_player = -1 if user_color == 'b' else 1
     human_player = 1 if user_color == 'b' else -1
+    
+    # Reset environment with the agent perspective
+    state = env.reset(agent_perspective=agent_player)
+    done = False
     
     print(f"\nYou play {'black' if human_player == 1 else 'white'}")
     print(f"Agent plays {'black' if agent_player == 1 else 'white'}")
@@ -674,8 +705,12 @@ def self_play_training(
     historical_opponents.append(create_opponent_copy(agent))
     
     for episode in range(episodes):
-        # Reset environment
-        state = env.reset()
+        # 决定智能体是黑方还是白方
+        agent_plays_black = episode % 2 == 0
+        agent_perspective = 1 if agent_plays_black else -1
+        
+        # Reset environment with the agent perspective
+        state = env.reset(agent_perspective=agent_perspective)
         total_reward = 0.0
         done = False
         
@@ -690,12 +725,9 @@ def self_play_training(
         else:
             # Only one opponent available (initial version)
             opponent = historical_opponents[0]
+            opponent_idx = 0
         
-        # Decide who plays black (agent or opponent)
-        # Alternate between playing black and white to ensure balanced learning
-        agent_plays_black = episode % 2 == 0
-        
-        # Store trajectories
+        # Store trajectories for the agent
         agent_states = []
         agent_actions = []
         agent_rewards = []
@@ -720,7 +752,7 @@ def self_play_training(
                 action = agent.get_action(state, valid_moves, explore=True)
                 next_state, reward, done, info = env.step(action)
                 
-                # Store trajectory
+                # Store trajectory for the agent
                 agent_states.append(state.copy())
                 agent_actions.append(action)
                 agent_rewards.append(reward)
@@ -731,12 +763,7 @@ def self_play_training(
                 # Opponent's turn (historical agent)
                 action = opponent.get_action(state, valid_moves, explore=False)  # No exploration for opponent
                 next_state, _, done, _ = env.step(action)
-                
-                # If agent loses, give negative reward for its last move
-                if done and ((env.winner == 1 and not agent_plays_black) or (env.winner == -1 and agent_plays_black)):
-                    if agent_rewards:
-                        agent_rewards[-1] = -1.0
-                        total_reward -= 2.0  # Adjust total reward (subtract 2 since we already added +1)
+                # 对手的奖励不需要记录
             
             # Update state
             state = next_state
@@ -746,10 +773,10 @@ def self_play_training(
                 ax1 = env.render(ax=ax1)
                 plt.pause(0.1)
         
-        # After game ends, update rewards
+        # After game ends, record outcome for statistics
         winner = env.winner
         
-        # Record win/loss/draw
+        # Record win/loss/draw for statistics
         if winner == 1:  # Black wins
             win_history.append(1 if agent_plays_black else -1)
         elif winner == -1:  # White wins
@@ -757,16 +784,7 @@ def self_play_training(
         else:  # Draw
             win_history.append(0)
         
-        # Update final rewards if not already done
-        if done and len(agent_rewards) > 0:
-            if (agent_plays_black and winner == 1) or (not agent_plays_black and winner == -1):
-                # Agent wins, ensure final reward is positive
-                agent_rewards[-1] = 1.0
-            elif winner == 0:
-                # Draw
-                agent_rewards[-1] = 0.2
-        
-        # Store trajectories in agent
+        # Store trajectories in agent for learning
         for s, a, r in zip(agent_states, agent_actions, agent_rewards):
             agent.store_transition(s, a, r)
         
