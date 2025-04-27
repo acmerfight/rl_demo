@@ -948,10 +948,10 @@ def self_play_training(
         update_opponent_stats(env.winner, agent_plays_black, opponent_info, win_history)
         
         # 将轨迹存储在智能体中用于学习
-        s: np.ndarray
-        a: int
-        r: float
-        for s, a, r in zip(agent_states, agent_actions, agent_rewards):
+        state: np.ndarray
+        action: int
+        reward: float
+        for state, action, reward in zip(agent_states, agent_actions, agent_rewards):
             agent.store_transition(s, a, r)
         
         # 更新策略
