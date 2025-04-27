@@ -503,10 +503,10 @@ def test_agent_vs_random(
     games: int = 100,
     render_delay: float = 0.5,
 ) -> None:
-    """Test agent against random player"""
+    """测试智能体对抗随机玩家"""
     print("\n===== Testing agent against random player =====")
     
-    # Create plot
+    # 创建绘图
     plt.figure(figsize=(8, 8))
     ax = plt.gca()
     
@@ -515,10 +515,10 @@ def test_agent_vs_random(
     draw_count = 0
     
     for game in range(games):
-        # Decide if agent plays first or second
+        # 决定智能体是先手还是后手
         agent_player = 1 if np.random.random() < 0.5 else -1
         
-        # Reset environment with the agent perspective
+        # 重置环境并设置智能体视角
         state = env.reset(agent_perspective=agent_player)
         done = False
         
@@ -531,30 +531,30 @@ def test_agent_vs_random(
             valid_moves = env.get_valid_moves()
             
             if env.current_player == agent_player:
-                # Agent's turn
+                # 智能体回合
                 action = agent.get_action(state, valid_moves, explore=False)
                 next_state, _, done, info = env.step(action)
                 
                 print(f"Agent plays at: {chr(65 + info['position'][0])}{info['position'][1] + 1}")
             else:
-                # Random player's turn - 直接从valid_moves中随机选择
+                # 随机玩家回合 - 直接从valid_moves中随机选择
                 if valid_moves.size > 0:
                     random_action = np.random.choice(valid_moves)
                     next_state, _, done, info = env.step(random_action)
                     
                     print(f"Random player plays at: {chr(65 + info['position'][0])}{info['position'][1] + 1}")
                 else:
-                    # Board is full, draw
+                    # 棋盘已满，平局
                     break
             
-            # Update state
+            # 更新状态
             state = next_state
             
-            # Render
+            # 渲染
             ax = env.render(ax=ax)
             plt.pause(render_delay)
         
-        # Check match result
+        # 检查比赛结果
         if env.winner == agent_player:
             win_count += 1
             print("Agent wins!")
@@ -577,21 +577,21 @@ def test_agent_vs_human(
     agent: DiscretePolicyGomokuAgent,
     render_delay: float = 0.5,
 ) -> None:
-    """Test agent against human player with interactive clicking"""
+    """测试智能体对抗人类玩家，通过交互式点击"""
     print("\n===== Human vs Agent =====")
     
-    # Create interactive plot
+    # 创建交互式绘图
     plt.figure(figsize=(10, 10))
     ax = plt.gca()
     
-    # Decide who plays first
+    # 决定谁先手
     print("Do you want to play black (first) or white (second)?")
     user_color = input("Enter 'b' for black, 'w' for white: ").lower()
     
     agent_player = -1 if user_color == 'b' else 1
     human_player = 1 if user_color == 'b' else -1
     
-    # Reset environment with the agent perspective
+    # 重置环境并设置智能体视角
     state = env.reset(agent_perspective=agent_player)
     done = False
     
@@ -599,27 +599,27 @@ def test_agent_vs_human(
     print(f"Agent plays {'black' if agent_player == 1 else 'white'}")
     print("Click on the board to place your stone")
     
-    # Variable to store human's move
+    # 用于存储人类走子的变量
     human_move = None
     
-    # Function to handle mouse clicks
+    # 处理鼠标点击的函数
     def on_click(event):
         nonlocal human_move
         
-        # Only process clicks if it's human's turn and within the axes
+        # 只在人类回合且点击在绘图区域内时处理点击
         if env.current_player == human_player and event.inaxes == ax and not done:
             x, y = int(round(event.xdata)), int(round(event.ydata))
             
-            # Check if the position is valid
+            # 检查位置是否有效
             if 0 <= x < env.board_size and 0 <= y < env.board_size and env.board[x, y] == 0:
                 human_move = (x, y)
                 plt.title(f"You placed at: {chr(65 + x)}{y + 1}", fontsize=14)
                 plt.draw()
     
-    # Connect the click event
+    # 连接点击事件
     plt.gcf().canvas.mpl_connect('button_press_event', on_click)
     
-    # Initial render
+    # 初始渲染
     ax = env.render(ax=ax)
     
     if env.current_player == human_player:
@@ -632,10 +632,10 @@ def test_agent_vs_human(
     
     while not done:
         if env.current_player == agent_player:
-            # Agent's turn
+            # 智能体回合
             plt.title("Agent's turn...", fontsize=14)
             plt.draw()
-            plt.pause(0.5)  # Pause to show "Agent's turn" message
+            plt.pause(0.5)  # 暂停以显示"智能体回合"消息
             
             # 获取有效动作
             valid_moves = env.get_valid_moves()
@@ -643,12 +643,12 @@ def test_agent_vs_human(
             action = agent.get_action(state, valid_moves, explore=False)
             next_state, _, done, info = env.step(action)
             
-            # Show agent's move
+            # 显示智能体的走子
             move_str = f"{chr(65 + info['position'][0])}{info['position'][1] + 1}"
             print(f"Agent plays at: {move_str}")
             plt.title(f"Agent placed at: {move_str}", fontsize=14)
             
-            # Render
+            # 渲染
             ax = env.render(ax=ax)
             plt.draw()
             plt.pause(render_delay)
@@ -657,28 +657,28 @@ def test_agent_vs_human(
                 plt.title("Your turn - click to place a stone", fontsize=14)
                 plt.draw()
         else:
-            # Human player's turn - wait for click
+            # 人类玩家回合 - 等待点击
             human_move = None
             
             while human_move is None and not done:
-                plt.pause(0.1)  # Check for clicks every 0.1 seconds
+                plt.pause(0.1)  # 每0.1秒检查一次点击
             
-            if not done:  # Make sure game didn't end while waiting
-                # Convert to action index
+            if not done:  # 确保游戏在等待时没有结束
+                # 转换为动作索引
                 x, y = human_move
                 human_action = x * env.board_size + y
                 
                 next_state, _, done, _ = env.step(human_action)
                 
-                # Render
+                # 渲染
                 ax = env.render(ax=ax)
                 plt.draw()
                 plt.pause(render_delay)
         
-        # Update state
+        # 更新状态
         state = next_state
     
-    # Game ended
+    # 游戏结束
     if env.winner == human_player:
         result = "You win!"
     elif env.winner == agent_player:
@@ -690,19 +690,19 @@ def test_agent_vs_human(
     plt.title(f"Game over - {result}", fontsize=16, fontweight='bold')
     plt.draw()
     
-    # Keep the window open until closed manually
+    # 保持窗口打开直到手动关闭
     plt.show()
 
 
 def create_opponent_copy(agent, env):
-    """Create a copy of the current agent to use as an opponent"""
+    """创建当前智能体的副本作为对手"""
     opponent = DiscretePolicyGomokuAgent(
         board_size=env.board_size,
         hidden_dim=agent.hidden_dim,
         learning_rate=agent.learning_rate,
         gamma=agent.gamma
     )
-    # Copy parameters
+    # 复制参数
     opponent.w1 = agent.w1.copy()
     opponent.b1 = agent.b1.copy()
     opponent.w2 = agent.w2.copy()
@@ -713,7 +713,7 @@ def create_opponent_copy(agent, env):
 
 
 def select_opponent(historical_opponents):
-    """Select an opponent from historical agents based on win rate"""
+    """根据胜率从历史智能体中选择对手"""
     if len(historical_opponents) > 1:
         # 简化的对手选择逻辑：优先选择胜率高的对手，同时保留一定探索性
         exploration_factor = 0.2  # 探索因子：值越大，随机性越强
@@ -728,7 +728,7 @@ def select_opponent(historical_opponents):
         # 按概率选择对手
         opponent_idx = np.random.choice(len(historical_opponents), p=selection_probs)
     else:
-        # Only one opponent available (initial version)
+        # 只有一个可用对手（初始版本）
         opponent_idx = 0
     
     opponent_info = historical_opponents[opponent_idx]
@@ -736,18 +736,18 @@ def select_opponent(historical_opponents):
 
 
 def update_opponent_stats(winner, agent_plays_black, opponent_info, win_history):
-    """Update opponent statistics based on game outcome"""
-    if winner == 1:  # Black wins
+    """根据游戏结果更新对手统计信息"""
+    if winner == 1:  # 黑棋获胜
         win_history.append(1 if agent_plays_black else -1)
         # 更新对手胜率信息
         if not agent_plays_black:  # 对手获胜
             opponent_info['wins'] += 1
-    elif winner == -1:  # White wins
+    elif winner == -1:  # 白棋获胜
         win_history.append(1 if not agent_plays_black else -1)
         # 更新对手胜率信息
         if agent_plays_black:  # 对手获胜
             opponent_info['wins'] += 1
-    else:  # Draw
+    else:  # 平局
         win_history.append(0)
     
     # 更新对手的游戏总数和胜率
@@ -756,7 +756,7 @@ def update_opponent_stats(winner, agent_plays_black, opponent_info, win_history)
 
 
 def manage_historical_opponents(historical_opponents, agent, env, episode, save_opponent_freq, should_render):
-    """Manage the collection of historical opponents"""
+    """管理历史对手集合"""
     if (episode + 1) % save_opponent_freq == 0:
         max_opponents = 50  # 限制历史对手最大数量
         if len(historical_opponents) >= max_opponents:
@@ -788,17 +788,17 @@ def manage_historical_opponents(historical_opponents, agent, env, episode, save_
 
 
 def update_visualization(ax2, episode_rewards, win_history):
-    """Update the training progress visualization"""
+    """更新训练进度可视化"""
     ax2.clear()
     ax2.plot(episode_rewards, 'b-', alpha=0.3, label='Raw Reward')
     
-    # Add moving average
+    # 添加移动平均线
     window = min(50, len(episode_rewards))
     if window > 1:
         moving_avg = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
         ax2.plot(range(window-1, len(episode_rewards)), moving_avg, 'r-', linewidth=2, label=f'{window}-ep Average')
     
-    # Add win rate
+    # 添加胜率
     if len(win_history) > 10:
         win_rate = [np.mean([1 if w == 1 else 0 for w in win_history[max(0, i-50):i+1]]) * 100 
                    for i in range(len(win_history))]
@@ -812,12 +812,12 @@ def update_visualization(ax2, episode_rewards, win_history):
 
 
 def play_single_game(env, agent, opponent, agent_plays_black, should_render, ax1):
-    """Run a single training game between agent and opponent"""
-    # Reset environment with the agent perspective
+    """运行智能体和对手之间的单场训练游戏"""
+    # 重置环境并设置智能体视角
     agent_perspective = 1 if agent_plays_black else -1
     state = env.reset(agent_perspective=agent_perspective)
     
-    # Store trajectories for the agent
+    # 存储智能体的轨迹
     agent_states = []
     agent_actions = []
     agent_rewards = []
@@ -835,27 +835,27 @@ def play_single_game(env, agent, opponent, agent_plays_black, should_render, ax1
         valid_moves = env.get_valid_moves()
         
         if is_agent_turn:
-            # Agent's turn
+            # 智能体回合
             action = agent.get_action(state, valid_moves, explore=True)
             next_state, reward, done, info = env.step(action)
             
-            # Store trajectory for the agent
+            # 存储智能体的轨迹
             agent_states.append(state.copy())
             agent_actions.append(action)
             agent_rewards.append(reward)
             
-            # Accumulate reward for plotting
+            # 累积奖励用于绘图
             total_reward += reward
         else:
-            # Opponent's turn (historical agent)
-            action = opponent.get_action(state, valid_moves, explore=False)  # No exploration for opponent
+            # 对手回合（历史智能体）
+            action = opponent.get_action(state, valid_moves, explore=False)  # 对手不进行探索
             next_state, _, done, _ = env.step(action)
             # 对手的奖励不需要记录
         
-        # Update state
+        # 更新状态
         state = next_state
         
-        # Render
+        # 渲染
         if should_render:
             ax1 = env.render(ax=ax1)
             plt.pause(0.1)
@@ -864,7 +864,7 @@ def play_single_game(env, agent, opponent, agent_plays_black, should_render, ax1
 
 
 def print_episode_info(episode, episodes, total_reward, winner, agent_plays_black, win_history):
-    """Print information about the completed episode"""
+    """打印回合信息"""
     print(f"Episode {episode+1}/{episodes}, Reward: {total_reward:.2f}")
     if winner == 1:
         print(f"{'Agent' if agent_plays_black else 'Opponent'} (Black) wins!")
@@ -873,7 +873,7 @@ def print_episode_info(episode, episodes, total_reward, winner, agent_plays_blac
     else:
         print("Draw!")
     
-    # Print win rate
+    # 打印胜率
     if len(win_history) > 10:
         recent_win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-min(50, len(win_history)):]]) * 100
         print(f"Recent win rate: {recent_win_rate:.1f}%")
@@ -886,16 +886,16 @@ def self_play_training(
     render_freq: int = 50,
     save_opponent_freq: int = 20,  # 每多少回合保存一次对手模型
 ) -> List[float]:
-    """Self-play training with historical versions of the agent"""
+    """使用历史版本智能体进行自我对弈训练"""
     print("===== Starting self-play training with historical opponents =====")
     
-    # Create interactive plot
+    # 创建交互式绘图
     fig = plt.figure(figsize=(15, 8))
     
-    # Game visualization
+    # 游戏可视化
     ax1 = fig.add_subplot(1, 2, 1)
     
-    # Training progress visualization
+    # 训练进度可视化
     ax2 = fig.add_subplot(1, 2, 2)
     ax2.set_xlabel("Episodes")
     ax2.set_ylabel("Total Reward")
@@ -904,11 +904,11 @@ def self_play_training(
     episode_rewards = []
     win_history = []
     
-    # Store historical opponents with win rate info
-    # Each item is a dict with: 'model': opponent model, 'wins': 0, 'games': 0, 'win_rate': 0.0
+    # 存储具有胜率信息的历史对手
+    # 每个项目是一个字典，包含: 'model': 对手模型, 'wins': 0, 'games': 0, 'win_rate': 0.0
     historical_opponents = []
     
-    # Save initial version as the first opponent
+    # 将初始版本保存为第一个对手
     historical_opponents.append({
         'model': create_opponent_copy(agent, env),
         'wins': 0,
@@ -920,11 +920,11 @@ def self_play_training(
         # 决定智能体是黑方还是白方, 1代表黑方, -1代表白方
         agent_plays_black = episode % 2 == 0
         
-        # Choose opponent from historical agents
+        # 从历史智能体中选择对手
         opponent_idx, opponent_info = select_opponent(historical_opponents)
         opponent = opponent_info['model']
         
-        # Determine if we should render this episode
+        # 决定是否渲染本回合
         should_render = episode % render_freq == 0
         
         if should_render:
@@ -932,32 +932,32 @@ def self_play_training(
             win_rate_str = f", Win rate: {opponent_info['win_rate']*100:.1f}%" if opponent_info['games'] > 0 else ""
             print(f"Playing against opponent version {opponent_idx}{win_rate_str}")
         
-        # Play a single game between agent and opponent
+        # 运行智能体和对手之间的单场游戏
         total_reward, agent_states, agent_actions, agent_rewards = play_single_game(
             env, agent, opponent, agent_plays_black, should_render, ax1
         )
         
-        # Update opponent statistics
+        # 更新对手统计信息
         update_opponent_stats(env.winner, agent_plays_black, opponent_info, win_history)
         
-        # Store trajectories in agent for learning
+        # 将轨迹存储在智能体中用于学习
         for s, a, r in zip(agent_states, agent_actions, agent_rewards):
             agent.store_transition(s, a, r)
         
-        # Update policy
+        # 更新策略
         agent.update_policy()
         
-        # Record reward for this episode
+        # 记录本回合的奖励
         episode_rewards.append(total_reward)
         
-        # Manage historical opponents collection
+        # 管理历史对手集合
         manage_historical_opponents(historical_opponents, agent, env, episode, save_opponent_freq, should_render)
         
-        # Update progress visualization
+        # 更新进度可视化
         if episode > 0:
             update_visualization(ax2, episode_rewards, win_history)
         
-        # Print training info
+        # 打印训练信息
         if should_render or episode == episodes - 1:
             print_episode_info(episode, episodes, total_reward, env.winner, agent_plays_black, win_history)
     
@@ -966,10 +966,10 @@ def self_play_training(
 
 
 if __name__ == "__main__":
-    # Create environment
+    # 创建环境
     env = GomokuEnv(board_size=15)
     
-    # Create agent
+    # 创建智能体
     agent = DiscretePolicyGomokuAgent(
         board_size=15,
         hidden_dim=256,
@@ -977,10 +977,10 @@ if __name__ == "__main__":
         gamma=0.99,
     )
     
-    # Train with self-play (only training option)
+    # 使用自我对弈进行训练（唯一的训练选项）
     rewards = self_play_training(env, agent, episodes=500, render_freq=50)
     
-    # Test mode selection
+    # 测试模式选择
     print("\nSelect test mode:")
     print("1. Play against random player")
     print("2. Play against human")
@@ -988,17 +988,17 @@ if __name__ == "__main__":
     try:
         test_mode = int(input("Enter mode (1-2): "))
     except ValueError:
-        test_mode = 1  # Default to random player if input is invalid
+        test_mode = 1  # 如果输入无效则默认为随机玩家
     
-    # Test based on selected mode
+    # 基于所选模式进行测试
     if test_mode == 2:
-        # Human vs Agent
+        # 人类对抗智能体
         test_agent_vs_human(env, agent)
     else:
-        # Agent vs Random
+        # 智能体对抗随机玩家
         test_agent_vs_random(env, agent, games=20)
     
-    # Plot training reward curve
+    # 绘制训练奖励曲线
     plt.figure(figsize=(10, 6))
     plt.plot(agent.episode_rewards)
     plt.xlabel("Episode")
