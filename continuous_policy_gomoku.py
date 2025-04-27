@@ -811,28 +811,40 @@ def update_visualization(ax2, episode_rewards, win_history):
     plt.pause(0.01)
 
 
-def play_single_game(env, agent, opponent, agent_plays_black, should_render, ax1):
+def play_single_game(
+    env: GomokuEnv,
+    agent: DiscretePolicyGomokuAgent,
+    opponent: DiscretePolicyGomokuAgent,
+    agent_plays_black: bool,
+    should_render: bool,
+    ax1: Axes
+) -> Tuple[float, List[np.ndarray], List[int], List[float]]:
     """运行智能体和对手之间的单场训练游戏"""
     # 重置环境并设置智能体视角
-    agent_perspective = 1 if agent_plays_black else -1
-    state = env.reset(agent_perspective=agent_perspective)
+    agent_perspective: int = 1 if agent_plays_black else -1
+    state: np.ndarray = env.reset(agent_perspective=agent_perspective)
     
     # 存储智能体的轨迹
-    agent_states = []
-    agent_actions = []
-    agent_rewards = []
-    total_reward = 0.0
-    done = False
+    agent_states: List[np.ndarray] = []
+    agent_actions: List[int] = []
+    agent_rewards: List[float] = []
+    total_reward: float = 0.0
+    done: bool = False
     
     if should_render:
         ax1 = env.render(ax=ax1)
     
     while not done:
-        current_player = env.current_player
-        is_agent_turn = (agent_plays_black and current_player == 1) or (not agent_plays_black and current_player == -1)
+        current_player: int = env.current_player
+        is_agent_turn: bool = (agent_plays_black and current_player == 1) or (not agent_plays_black and current_player == -1)
         
         # 获取有效动作
-        valid_moves = env.get_valid_moves()
+        valid_moves: np.ndarray = env.get_valid_moves()
+        
+        action: int
+        next_state: np.ndarray
+        reward: float
+        info: Dict[str, Any]
         
         if is_agent_turn:
             # 智能体回合
