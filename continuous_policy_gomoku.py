@@ -694,6 +694,191 @@ def test_agent_vs_human(
     plt.show()
 
 
+def create_opponent_copy(agent, env):
+    """Create a copy of the current agent to use as an opponent"""
+    opponent = DiscretePolicyGomokuAgent(
+        board_size=env.board_size,
+        hidden_dim=agent.hidden_dim,
+        learning_rate=agent.learning_rate,
+        gamma=agent.gamma
+    )
+    # Copy parameters
+    opponent.w1 = agent.w1.copy()
+    opponent.b1 = agent.b1.copy()
+    opponent.w2 = agent.w2.copy()
+    opponent.b2 = agent.b2.copy()
+    opponent.w3 = agent.w3.copy()
+    opponent.b3 = agent.b3.copy()
+    return opponent
+
+
+def select_opponent(historical_opponents):
+    """Select an opponent from historical agents based on win rate"""
+    if len(historical_opponents) > 1:
+        # 简化的对手选择逻辑：优先选择胜率高的对手，同时保留一定探索性
+        exploration_factor = 0.2  # 探索因子：值越大，随机性越强
+        
+        # 获取所有对手胜率
+        win_rates = np.array([opponent['win_rate'] for opponent in historical_opponents])
+        
+        # 结合探索因子计算选择概率
+        selection_probs = win_rates + exploration_factor/len(historical_opponents)
+        selection_probs = selection_probs / np.sum(selection_probs)  # 归一化
+        
+        # 按概率选择对手
+        opponent_idx = np.random.choice(len(historical_opponents), p=selection_probs)
+    else:
+        # Only one opponent available (initial version)
+        opponent_idx = 0
+    
+    opponent_info = historical_opponents[opponent_idx]
+    return opponent_idx, opponent_info
+
+
+def update_opponent_stats(winner, agent_plays_black, opponent_info, win_history):
+    """Update opponent statistics based on game outcome"""
+    if winner == 1:  # Black wins
+        win_history.append(1 if agent_plays_black else -1)
+        # 更新对手胜率信息
+        if not agent_plays_black:  # 对手获胜
+            opponent_info['wins'] += 1
+    elif winner == -1:  # White wins
+        win_history.append(1 if not agent_plays_black else -1)
+        # 更新对手胜率信息
+        if agent_plays_black:  # 对手获胜
+            opponent_info['wins'] += 1
+    else:  # Draw
+        win_history.append(0)
+    
+    # 更新对手的游戏总数和胜率
+    opponent_info['games'] += 1
+    opponent_info['win_rate'] = opponent_info['wins'] / opponent_info['games']
+
+
+def manage_historical_opponents(historical_opponents, agent, env, episode, save_opponent_freq, should_render):
+    """Manage the collection of historical opponents"""
+    if (episode + 1) % save_opponent_freq == 0:
+        max_opponents = 50  # 限制历史对手最大数量
+        if len(historical_opponents) >= max_opponents:
+            # 移除表现最差的对手，而不是最旧的
+            # 我们定义"表现差"为胜率低且游戏次数足够的对手
+            min_games_threshold = 5  # 最少游戏次数阈值，避免移除新对手
+            candidates = [i for i, opp in enumerate(historical_opponents) 
+                         if opp['games'] >= min_games_threshold]
+            
+            if candidates:
+                # 如果有足够多对战的对手，移除胜率最低的
+                win_rates = [historical_opponents[i]['win_rate'] for i in candidates]
+                worst_idx = candidates[np.argmin(win_rates)]
+                historical_opponents.pop(worst_idx)
+            else:
+                # 如果没有，则移除最旧的
+                historical_opponents.pop(0)
+        
+        # 添加新对手
+        historical_opponents.append({
+            'model': create_opponent_copy(agent, env),
+            'wins': 0,
+            'games': 0,
+            'win_rate': 0.5  # 初始胜率设为0.5（中性评价）
+        })
+        
+        if should_render:
+            print(f"Saved current agent as opponent version {len(historical_opponents) - 1}")
+
+
+def update_visualization(ax2, episode_rewards, win_history):
+    """Update the training progress visualization"""
+    ax2.clear()
+    ax2.plot(episode_rewards, 'b-', alpha=0.3, label='Raw Reward')
+    
+    # Add moving average
+    window = min(50, len(episode_rewards))
+    if window > 1:
+        moving_avg = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
+        ax2.plot(range(window-1, len(episode_rewards)), moving_avg, 'r-', linewidth=2, label=f'{window}-ep Average')
+    
+    # Add win rate
+    if len(win_history) > 10:
+        win_rate = [np.mean([1 if w == 1 else 0 for w in win_history[max(0, i-50):i+1]]) * 100 
+                   for i in range(len(win_history))]
+        ax2.plot(win_rate, 'g-', linewidth=2, label='Win Rate (%)')
+    
+    ax2.set_xlabel("Episodes")
+    ax2.set_ylabel("Total Reward / Win Rate (%)")
+    ax2.set_title("Training Progress")
+    ax2.legend(loc='upper left')
+    plt.pause(0.01)
+
+
+def play_single_game(env, agent, opponent, agent_plays_black, should_render, ax1):
+    """Run a single training game between agent and opponent"""
+    # Reset environment with the agent perspective
+    agent_perspective = 1 if agent_plays_black else -1
+    state = env.reset(agent_perspective=agent_perspective)
+    
+    # Store trajectories for the agent
+    agent_states = []
+    agent_actions = []
+    agent_rewards = []
+    total_reward = 0.0
+    done = False
+    
+    if should_render:
+        ax1 = env.render(ax=ax1)
+    
+    while not done:
+        current_player = env.current_player
+        is_agent_turn = (agent_plays_black and current_player == 1) or (not agent_plays_black and current_player == -1)
+        
+        # 获取有效动作
+        valid_moves = env.get_valid_moves()
+        
+        if is_agent_turn:
+            # Agent's turn
+            action = agent.get_action(state, valid_moves, explore=True)
+            next_state, reward, done, info = env.step(action)
+            
+            # Store trajectory for the agent
+            agent_states.append(state.copy())
+            agent_actions.append(action)
+            agent_rewards.append(reward)
+            
+            # Accumulate reward for plotting
+            total_reward += reward
+        else:
+            # Opponent's turn (historical agent)
+            action = opponent.get_action(state, valid_moves, explore=False)  # No exploration for opponent
+            next_state, _, done, _ = env.step(action)
+            # 对手的奖励不需要记录
+        
+        # Update state
+        state = next_state
+        
+        # Render
+        if should_render:
+            ax1 = env.render(ax=ax1)
+            plt.pause(0.1)
+    
+    return total_reward, agent_states, agent_actions, agent_rewards
+
+
+def print_episode_info(episode, episodes, total_reward, winner, agent_plays_black, win_history):
+    """Print information about the completed episode"""
+    print(f"Episode {episode+1}/{episodes}, Reward: {total_reward:.2f}")
+    if winner == 1:
+        print(f"{'Agent' if agent_plays_black else 'Opponent'} (Black) wins!")
+    elif winner == -1:
+        print(f"{'Agent' if not agent_plays_black else 'Opponent'} (White) wins!")
+    else:
+        print("Draw!")
+    
+    # Print win rate
+    if len(win_history) > 10:
+        recent_win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-min(50, len(win_history)):]]) * 100
+        print(f"Recent win rate: {recent_win_rate:.1f}%")
+
+
 def self_play_training(
     env: GomokuEnv,
     agent: DiscretePolicyGomokuAgent,
@@ -723,134 +908,37 @@ def self_play_training(
     # Each item is a dict with: 'model': opponent model, 'wins': 0, 'games': 0, 'win_rate': 0.0
     historical_opponents = []
     
-    # Function to create a copy of the current agent
-    def create_opponent_copy(agent):
-        opponent = DiscretePolicyGomokuAgent(
-            board_size=env.board_size,
-            hidden_dim=agent.hidden_dim,
-            learning_rate=agent.learning_rate,
-            gamma=agent.gamma
-        )
-        # Copy parameters
-        opponent.w1 = agent.w1.copy()
-        opponent.b1 = agent.b1.copy()
-        opponent.w2 = agent.w2.copy()
-        opponent.b2 = agent.b2.copy()
-        opponent.w3 = agent.w3.copy()
-        opponent.b3 = agent.b3.copy()
-        return opponent
-    
     # Save initial version as the first opponent
     historical_opponents.append({
-        'model': create_opponent_copy(agent),
+        'model': create_opponent_copy(agent, env),
         'wins': 0,
         'games': 0,
-        'win_rate': 0.0
+        'win_rate': 0.5
     })
     
     for episode in range(episodes):
         # 决定智能体是黑方还是白方, 1代表黑方, -1代表白方
         agent_plays_black = episode % 2 == 0
-        agent_perspective = 1 if agent_plays_black else -1
         
-        # Reset environment with the agent perspective
-        state = env.reset(agent_perspective=agent_perspective)
-        total_reward = 0.0
-        done = False
+        # Choose opponent from historical agents
+        opponent_idx, opponent_info = select_opponent(historical_opponents)
+        opponent = opponent_info['model']
         
-        # Choose opponent from historical agents based on win rate
-        if len(historical_opponents) > 1:
-            # 计算选择概率：胜率越高的对手被选中概率越大
-            # 加入一个额外项来保持探索性（确保每个对手都有被选择的机会）
-            exploration_factor = 0.2  # 控制探索强度
-            base_prob = exploration_factor / len(historical_opponents)  # 基础概率确保探索
-            
-            # 计算基于胜率的概率
-            win_rates = np.array([opponent['win_rate'] for opponent in historical_opponents])
-            # 新对手可能没有胜率记录，用默认值代替
-            win_rates = np.where(np.isnan(win_rates), 0.5, win_rates)
-            
-            # 将胜率转化为选择权重（高胜率=高权重）
-            selection_weights = win_rates + base_prob
-            # 归一化概率
-            p = selection_weights / np.sum(selection_weights)
-            
-            opponent_idx = np.random.choice(len(historical_opponents), p=p)
-            opponent_info = historical_opponents[opponent_idx]
-            opponent = opponent_info['model']
-        else:
-            # Only one opponent available (initial version)
-            opponent_idx = 0
-            opponent_info = historical_opponents[0]
-            opponent = opponent_info['model']
-        
-        # Store trajectories for the agent
-        agent_states = []
-        agent_actions = []
-        agent_rewards = []
-        
-        # Render if it's a visualization episode
+        # Determine if we should render this episode
         should_render = episode % render_freq == 0
         
         if should_render:
             print(f"Episode {episode+1}, Agent plays {'black' if agent_plays_black else 'white'}")
             win_rate_str = f", Win rate: {opponent_info['win_rate']*100:.1f}%" if opponent_info['games'] > 0 else ""
             print(f"Playing against opponent version {opponent_idx}{win_rate_str}")
-            ax1 = env.render(ax=ax1)
         
-        while not done:
-            current_player = env.current_player
-            is_agent_turn = (agent_plays_black and current_player == 1) or (not agent_plays_black and current_player == -1)
-            
-            # 获取有效动作
-            valid_moves = env.get_valid_moves()
-            
-            if is_agent_turn:
-                # Agent's turn
-                action = agent.get_action(state, valid_moves, explore=True)
-                next_state, reward, done, info = env.step(action)
-                
-                # Store trajectory for the agent
-                agent_states.append(state.copy())
-                agent_actions.append(action)
-                agent_rewards.append(reward)
-                
-                # Accumulate reward for plotting
-                total_reward += reward
-            else:
-                # Opponent's turn (historical agent)
-                action = opponent.get_action(state, valid_moves, explore=False)  # No exploration for opponent
-                next_state, _, done, _ = env.step(action)
-                # 对手的奖励不需要记录
-            
-            # Update state
-            state = next_state
-            
-            # Render
-            if should_render:
-                ax1 = env.render(ax=ax1)
-                plt.pause(0.1)
+        # Play a single game between agent and opponent
+        total_reward, agent_states, agent_actions, agent_rewards = play_single_game(
+            env, agent, opponent, agent_plays_black, should_render, ax1
+        )
         
-        # After game ends, record outcome for statistics
-        winner = env.winner
-        
-        # Record win/loss/draw for statistics
-        if winner == 1:  # Black wins
-            win_history.append(1 if agent_plays_black else -1)
-            # 更新对手胜率信息
-            if not agent_plays_black:  # 对手获胜
-                opponent_info['wins'] += 1
-        elif winner == -1:  # White wins
-            win_history.append(1 if not agent_plays_black else -1)
-            # 更新对手胜率信息
-            if agent_plays_black:  # 对手获胜
-                opponent_info['wins'] += 1
-        else:  # Draw
-            win_history.append(0)
-        
-        # 更新对手的游戏总数和胜率
-        opponent_info['games'] += 1
-        opponent_info['win_rate'] = opponent_info['wins'] / opponent_info['games']
+        # Update opponent statistics
+        update_opponent_stats(env.winner, agent_plays_black, opponent_info, win_history)
         
         # Store trajectories in agent for learning
         for s, a, r in zip(agent_states, agent_actions, agent_rewards):
@@ -862,73 +950,16 @@ def self_play_training(
         # Record reward for this episode
         episode_rewards.append(total_reward)
         
-        # Save current agent as opponent every save_opponent_freq episodes
-        if (episode + 1) % save_opponent_freq == 0:
-            max_opponents = 50  # 限制历史对手最大数量
-            if len(historical_opponents) >= max_opponents:
-                # 移除表现最差的对手，而不是最旧的
-                # 我们定义"表现差"为胜率低且游戏次数足够的对手
-                min_games_threshold = 5  # 最少游戏次数阈值，避免移除新对手
-                candidates = [i for i, opp in enumerate(historical_opponents) 
-                             if opp['games'] >= min_games_threshold]
-                
-                if candidates:
-                    # 如果有足够多对战的对手，移除胜率最低的
-                    win_rates = [historical_opponents[i]['win_rate'] for i in candidates]
-                    worst_idx = candidates[np.argmin(win_rates)]
-                    historical_opponents.pop(worst_idx)
-                else:
-                    # 如果没有，则移除最旧的
-                    historical_opponents.pop(0)
-            
-            # 添加新对手
-            historical_opponents.append({
-                'model': create_opponent_copy(agent),
-                'wins': 0,
-                'games': 0,
-                'win_rate': 0.0
-            })
-            
-            if should_render:
-                print(f"Saved current agent as opponent version {len(historical_opponents) - 1}")
+        # Manage historical opponents collection
+        manage_historical_opponents(historical_opponents, agent, env, episode, save_opponent_freq, should_render)
         
-        # Update progress plot
+        # Update progress visualization
         if episode > 0:
-            ax2.clear()
-            ax2.plot(episode_rewards, 'b-', alpha=0.3, label='Raw Reward')
-            
-            # Add moving average
-            window = min(50, len(episode_rewards))
-            if window > 1:
-                moving_avg = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
-                ax2.plot(range(window-1, len(episode_rewards)), moving_avg, 'r-', linewidth=2, label=f'{window}-ep Average')
-            
-            # Add win rate
-            if len(win_history) > 10:
-                win_rate = [np.mean([1 if w == 1 else 0 for w in win_history[max(0, i-50):i+1]]) * 100 
-                           for i in range(len(win_history))]
-                ax2.plot(win_rate, 'g-', linewidth=2, label='Win Rate (%)')
-            
-            ax2.set_xlabel("Episodes")
-            ax2.set_ylabel("Total Reward / Win Rate (%)")
-            ax2.set_title("Training Progress")
-            ax2.legend(loc='upper left')
-            plt.pause(0.01)
+            update_visualization(ax2, episode_rewards, win_history)
         
         # Print training info
         if should_render or episode == episodes - 1:
-            print(f"Episode {episode+1}/{episodes}, Reward: {total_reward:.2f}")
-            if winner == 1:
-                print(f"{'Agent' if agent_plays_black else 'Opponent'} (Black) wins!")
-            elif winner == -1:
-                print(f"{'Agent' if not agent_plays_black else 'Opponent'} (White) wins!")
-            else:
-                print("Draw!")
-            
-            # Print win rate
-            if len(win_history) > 10:
-                recent_win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-min(50, len(win_history)):]]) * 100
-                print(f"Recent win rate: {recent_win_rate:.1f}%")
+            print_episode_info(episode, episodes, total_reward, env.winner, agent_plays_black, win_history)
     
     print("===== Training complete =====")
     return episode_rewards
