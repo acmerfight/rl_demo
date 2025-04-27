@@ -40,6 +40,7 @@ class GomokuEnv:
         - agent_perspective: 可选，重置智能体视角
         """
         self.board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
+        # 黑棋先手
         self.current_player = 1
         self.done = False
         self.winner = 0
