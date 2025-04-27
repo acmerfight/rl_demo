@@ -339,29 +339,52 @@ class DiscretePolicyGomokuAgent:
         # 计算所有动作的概率
         probs: np.ndarray = self._softmax(logits)
         
-        # 应用动作掩码，只保留有效动作的概率
-        # 创建掩码
+        # 步骤 4: 应用动作掩码 (Action Masking)
+        # ========================================
+        # 核心思想：神经网络可能输出对所有位置（包括无效位置）的偏好 (logits)。
+        # 但是，智能体只能在有效位置 (valid_moves) 落子。
+        # 动作掩码确保我们只考虑有效动作的概率，并将无效动作的概率强制设为 0。
+        # 学习过程发生在 update_policy 中，基于实际 *执行* 的 *有效* 动作及其带来的回报。
+        # 网络不会因为 "思考" 无效动作而直接受到惩罚，而是通过学习哪些 *有效* 动作更好来优化。
+        # ========================================
+        
+        # 创建掩码: 一个与动作空间同维度的向量，初始全为0
         mask: np.ndarray = np.zeros(self.action_dim)
+        # 将有效动作对应的位置设为1
         mask[valid_moves] = 1
         
-        # 应用掩码
+        # 应用掩码: 将原始概率与掩码逐元素相乘。无效动作的概率变为0。
         masked_probs: np.ndarray = probs * mask
         
         # 步骤 5: 重新归一化
-        # 重新归一化
-        sum_masked_probs: float = np.sum(masked_probs)
-        if sum_masked_probs > 1e-8: # 避免除以零或非常小的数
-            probs: np.ndarray = masked_probs / sum_masked_probs # 将有效概率重新缩放，使它们的和为 1
-        else:
-            # 如果所有有效动作的原始概率都接近于零 (不太可能发生，但为了健壮性)
-            # 或者 valid_moves 为空 (理论上不应在此处发生，由上层逻辑保证)
-            # 均匀分配到所有有效动作
-            probs: np.ndarray = np.zeros(self.action_dim)
-            if len(valid_moves) > 0:
-                 probs[valid_moves] = 1.0 / len(valid_moves)
-            else:   
-                raise ValueError("No valid moves provided. This indicates a game logic error.")
+        # ========================================
+        # 目的：使所有 *有效* 动作的概率之和为 1，形成一个合法的概率分布。
+        # ========================================
         
+        # 计算所有有效动作的概率之和
+        sum_masked_probs: float = np.sum(masked_probs)
+        
+        # 检查有效动作的总概率是否大于一个极小值 (避免除零和数值不稳定)
+        if sum_masked_probs > 1e-8:
+            # 如果总概率足够大，则进行归一化：每个有效动作的概率 = 其原始掩码后概率 / 总有效概率
+            probs: np.ndarray = masked_probs / sum_masked_probs
+        else:
+            # 处理边缘情况:
+            # 1. 如果 valid_moves 为空 (由 get_action 保证不应发生在此，但作为保险)
+            # 2. 如果所有有效动作的原始概率都接近于零 (网络可能极度偏好某个无效动作)
+            if len(valid_moves) == 0:
+                # 如果没有有效动作，这表示游戏逻辑上层存在问题（如游戏已结束但仍在请求动作）。
+                # 在此抛出异常比返回无效概率分布更清晰。
+                raise ValueError("compute_action_probs received an empty valid_moves list. This indicates a potential game logic error.")
+            else:
+                # 如果存在有效动作，但它们的总概率接近于零。
+                # 这通常发生在网络严重偏好无效动作时。直接惩罚在这里并不符合标准PG。
+                # 为了保证智能体仍能做出选择（健壮性），我们为所有有效动作分配均匀概率。
+                # 学习仍然依赖于 update_policy 中基于实际执行动作和回报的梯度。
+                probs: np.ndarray = np.zeros(self.action_dim)
+                probs[valid_moves] = 1.0 / len(valid_moves)
+        
+        # 返回最终的、只在有效动作上有非零值的概率分布
         return probs
     
     def get_action(self, state: np.ndarray, valid_moves: np.ndarray, explore: bool = True) -> int:
