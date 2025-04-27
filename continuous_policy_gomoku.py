@@ -372,17 +372,17 @@ class DiscretePolicyGomokuAgent:
             # 处理边缘情况:
             # 1. 如果 valid_moves 为空 (由 get_action 保证不应发生在此，但作为保险)
             # 2. 如果所有有效动作的原始概率都接近于零 (网络可能极度偏好某个无效动作)
-            if len(valid_moves) == 0:
-                # 如果没有有效动作，这表示游戏逻辑上层存在问题（如游戏已结束但仍在请求动作）。
-                # 在此抛出异常比返回无效概率分布更清晰。
-                raise ValueError("compute_action_probs received an empty valid_moves list. This indicates a potential game logic error.")
-            else:
+            if len(valid_moves) > 0:
                 # 如果存在有效动作，但它们的总概率接近于零。
                 # 这通常发生在网络严重偏好无效动作时。直接惩罚在这里并不符合标准PG。
                 # 为了保证智能体仍能做出选择（健壮性），我们为所有有效动作分配均匀概率。
                 # 学习仍然依赖于 update_policy 中基于实际执行动作和回报的梯度。
                 probs: np.ndarray = np.zeros(self.action_dim)
                 probs[valid_moves] = 1.0 / len(valid_moves)
+            else:
+                # 如果没有有效动作，这表示游戏逻辑上层存在问题
+                # 在此抛出异常比返回无效概率分布更清晰。
+                raise ValueError("compute_action_probs received an empty valid_moves list. This indicates a potential game logic error.")
         
         # 返回最终的、只在有效动作上有非零值的概率分布
         return probs
