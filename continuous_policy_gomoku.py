@@ -890,27 +890,28 @@ def self_play_training(
     print("===== Starting self-play training with historical opponents =====")
     
     # 创建交互式绘图
-    fig = plt.figure(figsize=(15, 8))
-    
+    fig: Figure = plt.figure(figsize=(15, 8))
+
     # 游戏可视化
-    ax1 = fig.add_subplot(1, 2, 1)
-    
+    ax1: Axes = fig.add_subplot(1, 2, 1)
+
     # 训练进度可视化
-    ax2 = fig.add_subplot(1, 2, 2)
+    ax2: Axes = fig.add_subplot(1, 2, 2)
     ax2.set_xlabel("Episodes")
     ax2.set_ylabel("Total Reward")
     ax2.set_title("Training Progress")
     
-    episode_rewards = []
-    win_history = []
+    episode_rewards: List[float] = []
+    win_history: List[int] = []
     
     # 存储具有胜率信息的历史对手
     # 每个项目是一个字典，包含: 'model': 对手模型, 'wins': 0, 'games': 0, 'win_rate': 0.0
-    historical_opponents = []
+    historical_opponents: List[Dict[str, Any]] = []
     
     # 将初始版本保存为第一个对手
+    initial_opponent_model: DiscretePolicyGomokuAgent = create_opponent_copy(agent, env)
     historical_opponents.append({
-        'model': create_opponent_copy(agent, env),
+        'model': initial_opponent_model,
         'wins': 0,
         'games': 0,
         'win_rate': 0.5
@@ -918,21 +919,27 @@ def self_play_training(
     
     for episode in range(episodes):
         # 决定智能体是黑方还是白方, 1代表黑方, -1代表白方
-        agent_plays_black = episode % 2 == 0
+        agent_plays_black: bool = episode % 2 == 0
         
         # 从历史智能体中选择对手
+        opponent_idx: int
+        opponent_info: Dict[str, Any]
         opponent_idx, opponent_info = select_opponent(historical_opponents)
-        opponent = opponent_info['model']
+        opponent: DiscretePolicyGomokuAgent = opponent_info['model']
         
         # 决定是否渲染本回合
-        should_render = episode % render_freq == 0
+        should_render: bool = episode % render_freq == 0
         
         if should_render:
             print(f"Episode {episode+1}, Agent plays {'black' if agent_plays_black else 'white'}")
-            win_rate_str = f", Win rate: {opponent_info['win_rate']*100:.1f}%" if opponent_info['games'] > 0 else ""
+            win_rate_str: str = f", Win rate: {opponent_info['win_rate']*100:.1f}%" if opponent_info['games'] > 0 else ""
             print(f"Playing against opponent version {opponent_idx}{win_rate_str}")
         
         # 运行智能体和对手之间的单场游戏
+        total_reward: float
+        agent_states: List[np.ndarray]
+        agent_actions: List[int]
+        agent_rewards: List[float]
         total_reward, agent_states, agent_actions, agent_rewards = play_single_game(
             env, agent, opponent, agent_plays_black, should_render, ax1
         )
@@ -941,6 +948,9 @@ def self_play_training(
         update_opponent_stats(env.winner, agent_plays_black, opponent_info, win_history)
         
         # 将轨迹存储在智能体中用于学习
+        s: np.ndarray
+        a: int
+        r: float
         for s, a, r in zip(agent_states, agent_actions, agent_rewards):
             agent.store_transition(s, a, r)
         
