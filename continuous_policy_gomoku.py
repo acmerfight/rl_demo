@@ -281,6 +281,7 @@ class DiscretePolicyGomokuAgent:
         self.hidden_dim = hidden_dim
         
         # 策略网络参数 (3层神经网络), 输入层[675] state_dim → 隐藏层1[128] hidden_dim → 隐藏层2[128] hidden_dim → 输出层[225] action_dim
+        # 用了 He 初始化，在 ReLU 激活函数下表现更好
         # 输入层 -> 隐藏层
         self.w1 = np.random.randn(self.state_dim, hidden_dim) * np.sqrt(2 / self.state_dim)
         self.b1 = np.zeros(hidden_dim)
