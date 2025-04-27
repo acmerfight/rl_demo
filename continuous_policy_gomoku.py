@@ -93,6 +93,10 @@ class GomokuEnv:
         - reward: 奖励（从agent_perspective视角计算）
         - done: 游戏是否结束
         - info: 额外信息
+        
+        异常:
+        - ValueError: 如果动作无效
+        - RuntimeError: 如果游戏状态不一致（例如没有有效动作但游戏未结束）
         """
         if self.done:
             return self._get_state(), 0.0, True, {'winner': self.winner}
@@ -100,20 +104,20 @@ class GomokuEnv:
         # 验证动作值
         action = int(action)  # 确保是整数
         
+        # 获取有效的动作列表
+        valid_moves = self.get_valid_moves()
+        
+        # 检查游戏状态一致性
+        if len(valid_moves) == 0:
+            raise RuntimeError("No valid moves available but game is not marked as done. This indicates a bug in the game logic.")
+        
+        # 验证动作有效性
+        if action not in valid_moves:
+            raise ValueError(f"Invalid action {action}. Valid actions are {valid_moves}.")
+        
         # 转换为二维坐标
         x = action // self.board_size
         y = action % self.board_size
-        
-        # 验证动作有效性
-        valid_moves = self.get_valid_moves()
-        if action not in valid_moves:
-            # 找到一个有效位置（对于无效动作的处理）
-            if len(valid_moves) > 0:
-                action = valid_moves[0]
-                x = action // self.board_size
-                y = action % self.board_size
-            else:
-                raise RuntimeError("No valid moves available but game is not marked as done. This indicates a bug in the game logic.")
         
         # 执行动作
         self.board[x, y] = self.current_player
@@ -354,7 +358,14 @@ class DiscretePolicyGomokuAgent:
         
         返回:
         - action: 选择的动作索引
+        
+        异常:
+        - ValueError: 如果选择了无效动作（这表明存在代码逻辑错误）
         """
+        # 验证valid_moves非空
+        if len(valid_moves) == 0:
+            raise ValueError("Empty valid_moves provided. This indicates a game logic error.")
+        
         # 计算动作概率
         probs = self.compute_action_probs(state, valid_moves)
         
@@ -362,15 +373,16 @@ class DiscretePolicyGomokuAgent:
             # 基于概率分布采样动作
             action = np.random.choice(self.action_dim, p=probs)
             
-            # 确保动作有效
-            if action not in valid_moves and len(valid_moves) > 0:
-                action = valid_moves[0]
+            # 验证动作有效性（如果无效则是代码逻辑错误）
+            if action not in valid_moves:
+                raise ValueError(f"Selected action {action} is not in valid_moves despite probability masking. This indicates a bug in the implementation.")
         else:
             # 测试模式，选择最高概率的动作
             action = np.argmax(probs)
-            # 确保动作有效
-            if action not in valid_moves and len(valid_moves) > 0:
-                action = valid_moves[0]
+            
+            # 验证动作有效性（如果无效则是代码逻辑错误）
+            if action not in valid_moves:
+                raise ValueError(f"Selected action {action} is not in valid_moves despite probability masking. This indicates a bug in the implementation.")
         
         return action
     
