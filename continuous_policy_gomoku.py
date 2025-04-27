@@ -277,10 +277,10 @@ class DiscretePolicyGomokuAgent:
         # 动作维度: board_size * board_size (所有可能的落子位置)
         self.action_dim = board_size * board_size
         
-        # 隐藏层维度
+        # 隐藏层维度，中间神经元个数
         self.hidden_dim = hidden_dim
         
-        # 策略网络参数 (3层神经网络)
+        # 策略网络参数 (3层神经网络), 输入层[675] state_dim → 隐藏层1[128] hidden_dim → 隐藏层2[128] hidden_dim → 输出层[225] action_dim
         # 输入层 -> 隐藏层
         self.w1 = np.random.randn(self.state_dim, hidden_dim) * np.sqrt(2 / self.state_dim)
         self.b1 = np.zeros(hidden_dim)
