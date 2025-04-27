@@ -323,32 +323,44 @@ class DiscretePolicyGomokuAgent:
         返回:
         - probs: 动作概率分布
         """
+        # 步骤 1: 状态预处理
         # 确保状态格式正确
-        state = state.flatten()
+        state: np.ndarray = state.flatten() # (3, 15, 15) -> (675,)
         
+        # 步骤 2: 神经网络前向传播
         # 前向传播
-        h1 = self._relu(np.dot(state, self.w1) + self.b1)
-        h2 = self._relu(np.dot(h1, self.w2) + self.b2)
-        logits = np.dot(h2, self.w3) + self.b3
+        # 第一层: 输入 -> 隐藏层1
+        h1: np.ndarray = self._relu(np.dot(state, self.w1) + self.b1)
+        # 第二层: 隐藏层1 -> 隐藏层2
+        h2: np.ndarray = self._relu(np.dot(h1, self.w2) + self.b2)
+        # 第三层 (输出层): 隐藏层2 -> 输出 (logits)
+        logits: np.ndarray = np.dot(h2, self.w3) + self.b3
         
         # 计算所有动作的概率
-        probs = self._softmax(logits)
+        probs: np.ndarray = self._softmax(logits)
         
         # 应用动作掩码，只保留有效动作的概率
         # 创建掩码
-        mask = np.zeros(self.action_dim)
+        mask: np.ndarray = np.zeros(self.action_dim)
         mask[valid_moves] = 1
         
         # 应用掩码
-        masked_probs = probs * mask
+        masked_probs: np.ndarray = probs * mask
         
+        # 步骤 5: 重新归一化
         # 重新归一化
-        if np.sum(masked_probs) > 0:
-            probs = masked_probs / np.sum(masked_probs)
+        sum_masked_probs: float = np.sum(masked_probs)
+        if sum_masked_probs > 1e-8: # 避免除以零或非常小的数
+            probs: np.ndarray = masked_probs / sum_masked_probs # 将有效概率重新缩放，使它们的和为 1
         else:
-            # 如果没有有效动作的概率，均匀分配到所有有效动作
-            probs = np.zeros(self.action_dim)
-            probs[valid_moves] = 1.0 / len(valid_moves)
+            # 如果所有有效动作的原始概率都接近于零 (不太可能发生，但为了健壮性)
+            # 或者 valid_moves 为空 (理论上不应在此处发生，由上层逻辑保证)
+            # 均匀分配到所有有效动作
+            probs: np.ndarray = np.zeros(self.action_dim)
+            if len(valid_moves) > 0:
+                 probs[valid_moves] = 1.0 / len(valid_moves)
+            # 如果 len(valid_moves) == 0, probs 保持全零，但这表示上层逻辑有误
+            # 在 get_action 中有检查，这里主要是防止崩溃
         
         return probs
     
