@@ -101,9 +101,6 @@ class GomokuEnv:
         if self.done:
             return self._get_state(), 0.0, True, {'winner': self.winner}
         
-        # 验证动作值
-        action = int(action)  # 确保是整数
-        
         # 获取有效的动作列表
         valid_moves = self.get_valid_moves()
         
