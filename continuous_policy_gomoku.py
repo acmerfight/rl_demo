@@ -359,8 +359,8 @@ class DiscretePolicyGomokuAgent:
             probs: np.ndarray = np.zeros(self.action_dim)
             if len(valid_moves) > 0:
                  probs[valid_moves] = 1.0 / len(valid_moves)
-            # 如果 len(valid_moves) == 0, probs 保持全零，但这表示上层逻辑有误
-            # 在 get_action 中有检查，这里主要是防止崩溃
+            else:   
+                raise ValueError("No valid moves provided. This indicates a game logic error.")
         
         return probs
     
