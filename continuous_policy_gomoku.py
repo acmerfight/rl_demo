@@ -234,7 +234,7 @@ class GomokuEnv:
         ax.set_xticklabels([chr(65 + i) for i in range(self.board_size)])  # A, B, C, ...
         ax.set_yticklabels(range(1, self.board_size + 1))
         
-        ax.set_title('五子棋')
+        ax.set_title('Gomoku')
         plt.pause(0.01)
         
         return ax
@@ -952,7 +952,7 @@ def self_play_training(
         action: int
         reward: float
         for state, action, reward in zip(agent_states, agent_actions, agent_rewards):
-            agent.store_transition(s, a, r)
+            agent.store_transition(state, action, reward)
         
         # 更新策略
         agent.update_policy()
