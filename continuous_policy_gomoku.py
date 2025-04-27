@@ -268,6 +268,10 @@ class DiscretePolicyGomokuAgent:
         self.gamma = gamma
         
         # 状态维度: 3个通道(黑棋位置, 白棋位置, 当前玩家)
+        # 通道0：表示黑棋位置 - 形状为(15,15)的矩阵，黑棋位置为1，其他为0, 黑棋在哪里
+        # 通道1：表示白棋位置 - 形状为(15,15)的矩阵，白棋位置为1，其他为0, 白棋在哪里
+        # 通道2：表示当前玩家 - 形状为(15,15)的矩阵，黑棋回合全为1，白棋回合全为0, 现在轮到谁下
+        # 因为每个位置都有可能落子，所以每个通道需要棋盘大小*棋盘大小个参数
         self.state_dim = 3 * board_size * board_size
         
         # 动作维度: board_size * board_size (所有可能的落子位置)
@@ -738,7 +742,7 @@ def self_play_training(
     historical_opponents.append(create_opponent_copy(agent))
     
     for episode in range(episodes):
-        # 决定智能体是黑方还是白方
+        # 决定智能体是黑方还是白方, 1代表黑方, -1代表白方
         agent_plays_black = episode % 2 == 0
         agent_perspective = 1 if agent_plays_black else -1
         
