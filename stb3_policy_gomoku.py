@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from typing import Dict, Tuple, Optional, Any, List
+from typing import Dict, Tuple, Optional, Any, List, NamedTuple
 import os
 import gymnasium as gym
 from gymnasium import spaces
@@ -254,77 +254,138 @@ class GomokuEnv:
 
 # 以下为基于SB3、Gymnasium和Maskable PPO的自我博弈训练代码
 
+# 假设模型类型，如果知道具体类型可以替换 Any
+StableBaselinesModel = Any
+
+class ModelInfo(NamedTuple):
+    """存储模型及其元数据的结构体"""
+    model: StableBaselinesModel
+    name: str
+    iteration: Any # 迭代可以是数字或字符串，如 "initial"
+    win_rate: Optional[float]
+
 class ModelPoolManager:
     """
-    模型池管理器，用于管理历史模型
-    直接在内存中保存模型，不需要从磁盘加载
+    模型池管理器，用于管理历史模型。
+    在内存中保存模型快照，根据胜率移除和采样。
     """
-    def __init__(self, max_models=100):
+    def __init__(self, max_models: int = 100):
         """
         初始化模型池管理器
-        
+
         参数:
-        - models_dir: 模型保存目录（仅用于定期保存，不再用于加载）
-        - max_models: 池中最大模型数量
+        - max_models: 池中最大模型数量 (必须是正整数)
         """
+        if not isinstance(max_models, int) or max_models <= 0:
+            raise ValueError("max_models 必须是一个正整数。")
         self.max_models = max_models
-        self.models = []  # [(model, name, iteration, win_rate)]形式存储
-    
-    def add_model(self, model, iteration, win_rate: Optional[float] = None):
+        # 使用列表存储 ModelInfo 对象
+        self.models: List[ModelInfo] = []
+
+    def add_model(self, model: StableBaselinesModel, iteration: Any, win_rate: Optional[float] = None) -> str:
         """
-        添加新模型到模型池
-        
+        添加新模型到模型池。如果池已满，则移除胜率最低的模型。
+
         参数:
-        - model: 要添加的模型对象
-        - iteration: 当前迭代次数
+        - model: 要添加的模型对象 (将进行深拷贝)
+        - iteration: 当前迭代标识
         - win_rate: 可选，模型的胜率
-        
+
         返回:
-        - 模型名称
+        - 生成的模型名称
         """
-        # 生成模型名称，包含时间戳和迭代次数
+        # 生成唯一的模型名称
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_name = f"model_iter_{iteration}_{timestamp}"
-        
-        # 深拷贝模型以避免引用问题
-        model_copy = deepcopy(model)
-        
+
+        # 深拷贝模型以存储其状态快照
+        try:
+            # 注意: deepcopy 可能对某些复杂的模型对象非常耗时或失败
+            model_copy = deepcopy(model)
+        except Exception as e:
+            # 如果深拷贝失败，记录警告并存储原始引用（这可能导致后续问题）
+            print(f"警告：无法为模型池深拷贝模型。错误: {e}。将存储原始引用（存在被修改风险）。")
+            model_copy = model
+
+        # 创建模型信息对象
+        new_model_info = ModelInfo(model=model_copy, name=model_name, iteration=iteration, win_rate=win_rate)
+
         # 添加到内存池
-        self.models.append((model_copy, model_name, iteration, win_rate))
-        print(f"已将模型添加到内存模型池: {model_name}, Win Rate: {win_rate}")
-        
-        # 如果模型数量超过上限，移除最旧的模型
-        if len(self.models) > self.max_models:
-            _, removed_name, _, _ = self.models.pop(0)  # 移除最早添加的模型
-            print(f"已从模型池中移除旧模型: {removed_name}")
-        
+        self.models.append(new_model_info)
+        print(f"已将模型添加到内存模型池: {new_model_info.name}, Win Rate: {new_model_info.win_rate}")
+
+        # 如果模型数量超过上限，移除胜率最低的模型
+        self._evict_lowest_win_rate_model_if_needed()
+
         return model_name
-    
-    def sample_opponent_model(self, current_model=None):
+
+    def _evict_lowest_win_rate_model_if_needed(self):
+        """如果模型池已满，则查找并移除胜率最低的模型。"""
+        if len(self.models) > self.max_models:
+            # 使用 min 和 lambda 函数简洁地查找胜率最低的模型及其索引
+            # 将 None 胜率视为负无穷大，以便优先移除
+            try:
+                min_index, model_to_remove = min(
+                    enumerate(self.models),
+                    key=lambda item: item[1].win_rate if item[1].win_rate is not None else -float('inf')
+                )
+            except ValueError:
+                # 如果列表为空（理论上不会在这里发生），则不执行任何操作
+                return
+
+            # 移除模型
+            removed_info = self.models.pop(min_index)
+            print(f"模型池已满，已移除胜率最低的模型: {removed_info.name} (Win Rate: {removed_info.win_rate})")
+            # 可选：尝试显式删除模型对象以帮助垃圾回收（如果需要）
+            # del removed_info
+
+    def sample_opponent_model(self) -> Optional[StableBaselinesModel]:
         """
-        从模型池中随机选择一个对手模型
-        
-        参数:
-        - current_model: 当前模型对象，避免选中自己（通常不需要检查，因为池中都是历史版本）
-        
+        从模型池中根据胜率加权随机选择一个对手模型。
+        胜率越高的模型被选中的概率越大。
+
         返回:
-        - 选中的模型对象
+        - 选中的模型对象，如果池为空则返回 None
         """
         if not self.models:
+            print("模型池为空，无法采样对手。")
             return None
-        
-        # 随机选择一个模型
-        sampled_model, model_name, _, _ = random.choice(self.models)
-        print(f"从内存池中选择对手模型: {model_name}")
+
+        # 提取模型列表用于选择
+        models_in_pool = [info.model for info in self.models]
+
+        # 计算权重：胜率 + 基础权重 (epsilon)
+        # 基础权重确保所有模型（包括胜率为0或None的模型）都有机会被选中
+        base_weight = 0.01
+        weights = [(info.win_rate if info.win_rate is not None else 0.0) + base_weight for info in self.models]
+
+        try:
+            # 执行加权随机选择
+            chosen_index = random.choices(range(len(self.models)), weights=weights, k=1)[0]
+        except ValueError:
+            # 处理所有权重都无效的情况（虽然 base_weight 应该防止这种情况）
+            print("警告：无法执行加权采样（例如，权重无效）。回退到均匀随机选择。")
+            if not models_in_pool: 
+                return None # 再次检查以防万一  
+            chosen_index = random.randrange(len(self.models)) # 均匀随机选择作为后备
+
+        # 获取选中的模型及其信息用于日志记录
+        chosen_model_info = self.models[chosen_index]
+        sampled_model = chosen_model_info.model
+        model_name = chosen_model_info.name
+        chosen_win_rate = chosen_model_info.win_rate # 用于日志的原始胜率
+
+        print(f"从内存池中根据胜率加权选择对手模型: {model_name} (Win Rate: {chosen_win_rate}, Weight: {weights[chosen_index]:.3f})")
         return sampled_model
-    
-    def get_latest_model(self):
-        """获取最新的模型对象"""
+
+    def get_latest_model(self) -> Optional[StableBaselinesModel]:
+        """获取最新添加的模型对象"""
         if not self.models:
             return None
-        return self.models[-1][0]  # 返回最新添加的模型
-    
-    def get_model_count(self):
+        # 最新的模型总是在列表的末尾
+        return self.models[-1].model
+
+    def get_model_count(self) -> int:
         """获取模型池中的模型数量"""
         return len(self.models)
 
