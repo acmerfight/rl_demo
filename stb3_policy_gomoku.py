@@ -1,7 +1,24 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from typing import  Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Optional, Any, List
+import os
+import gymnasium as gym
+from gymnasium import spaces
+import torch as th
+import random
+import glob
+import time
+from datetime import datetime
+from copy import deepcopy
+
+from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+
+from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
+from sb3_contrib.common.wrappers import ActionMasker
+from sb3_contrib.ppo_mask import MaskablePPO
 
 class GomokuEnv:
     """
@@ -234,3 +251,537 @@ class GomokuEnv:
         plt.pause(0.01)
         
         return ax
+
+# 以下为基于SB3、Gymnasium和Maskable PPO的自我博弈训练代码
+
+class ModelPoolManager:
+    """
+    模型池管理器，用于管理历史模型
+    直接在内存中保存模型，不需要从磁盘加载
+    """
+    def __init__(self, models_dir="models/gomoku_pool", max_models=100):
+        """
+        初始化模型池管理器
+        
+        参数:
+        - models_dir: 模型保存目录（仅用于定期保存，不再用于加载）
+        - max_models: 池中最大模型数量
+        """
+        self.models_dir = models_dir
+        self.max_models = max_models
+        
+        # 直接在内存中存储模型
+        self.models = []  # [(model, name, iteration)]形式存储
+        
+        # 确保目录存在（仅用于保存）
+        os.makedirs(models_dir, exist_ok=True)
+    
+    def add_model(self, model, iteration):
+        """
+        添加新模型到模型池
+        
+        参数:
+        - model: 要添加的模型对象
+        - iteration: 当前迭代次数
+        
+        返回:
+        - 模型名称
+        """
+        # 生成模型名称，包含时间戳和迭代次数
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = f"model_iter_{iteration}_{timestamp}"
+        
+        # 深拷贝模型以避免引用问题
+        model_copy = deepcopy(model)
+        
+        # 添加到内存池
+        self.models.append((model_copy, model_name, iteration))
+        print(f"已将模型添加到内存模型池: {model_name}")
+        
+        # 如果模型数量超过上限，移除最旧的模型
+        if len(self.models) > self.max_models:
+            _, removed_name, _ = self.models.pop(0)  # 移除最早添加的模型
+            print(f"已从模型池中移除旧模型: {removed_name}")
+        
+        # 可选：定期保存到磁盘（如果需要持久化）
+        model_path = os.path.join(self.models_dir, f"{model_name}.zip")
+        model.save(model_path)
+        
+        return model_name
+    
+    def sample_opponent_model(self, current_model=None):
+        """
+        从模型池中随机选择一个对手模型
+        
+        参数:
+        - current_model: 当前模型对象，避免选中自己（通常不需要检查，因为池中都是历史版本）
+        
+        返回:
+        - 选中的模型对象
+        """
+        if not self.models:
+            return None
+        
+        # 随机选择一个模型
+        sampled_model, model_name, _ = random.choice(self.models)
+        print(f"从内存池中选择对手模型: {model_name}")
+        return sampled_model
+    
+    def get_latest_model(self):
+        """获取最新的模型对象"""
+        if not self.models:
+            return None
+        return self.models[-1][0]  # 返回最新添加的模型
+    
+    def get_model_count(self):
+        """获取模型池中的模型数量"""
+        return len(self.models)
+
+
+class GomokuGymEnv(gym.Env):
+    """
+    五子棋环境的Gymnasium包装器，支持真正的自我博弈
+    """
+    metadata = {'render_modes': ['human', 'rgb_array']}
+    
+    def __init__(self, board_size: int = 15, opponent_model=None):
+        """
+        初始化Gymnasium环境
+        
+        参数:
+        - board_size: 棋盘大小
+        - opponent_model: 对手模型对象
+        """
+        super().__init__()
+        
+        # 创建原始环境
+        self.env = GomokuEnv(board_size=board_size)
+        self.board_size = board_size
+        self.action_space = spaces.Discrete(board_size * board_size)
+        
+        # 设置观察空间为3通道的二维状态 [黑棋位置, 白棋位置, 当前玩家]
+        self.observation_space = spaces.Box(
+            low=0, high=1, 
+            shape=(3, board_size, board_size),
+            dtype=np.float32
+        )
+        
+        # 对手模型
+        self.opponent_model = opponent_model
+        self.use_random_opponent = True if opponent_model is None else False
+        
+        if self.opponent_model is not None:
+            print("使用提供的对手模型")
+        else:
+            print("使用随机策略作为对手")
+        
+        # 用于保存当前游戏信息
+        self.current_state = None
+        self.render_ax = None
+    
+    def set_opponent_model(self, model):
+        """
+        设置对手模型
+        
+        参数:
+        - model: 模型对象
+        """
+        self.opponent_model = model
+        self.use_random_opponent = False if model is not None else True
+        if model is not None:
+            print(f"已更新对手模型")
+    
+    def _random_opponent_action(self):
+        """随机对手策略"""
+        valid_moves = self.env.get_valid_moves()
+        if len(valid_moves) > 0:
+            return np.random.choice(valid_moves)
+        return 0  # 理论上不会发生，因为如果没有有效动作游戏应该已经结束
+    
+    def reset(self, seed=None, options=None):
+        """重置环境"""
+        if seed is not None:
+            np.random.seed(seed)
+        
+        # 重置内部环境
+        self.current_state = self.env.reset()
+        
+        # 信息字典
+        info = {}
+        
+        return self.current_state, info
+    
+    def step(self, action):
+        """
+        执行一步动作
+        
+        在真正的自我博弈中，智能体只扮演一方，对手是历史版本模型
+        """
+        # 获取有效动作掩码
+        action_mask = self.action_mask()
+        
+        # 验证动作是否有效
+        if not action_mask[action]:
+            # 如果动作无效，则随机选择一个有效动作
+            valid_actions = np.where(action_mask)[0]
+            if len(valid_actions) > 0:
+                action = np.random.choice(valid_actions)
+            else:
+                # 理论上不应该出现这种情况
+                raise ValueError("无有效动作可选")
+        
+        # 执行动作
+        next_state, reward, done, info = self.env.step(action)
+        self.current_state = next_state
+        
+        # 如果游戏未结束，则由对手走下一步
+        if not done:
+            opponent_action = None
+            
+            # 使用模型对手或随机对手
+            if not self.use_random_opponent and self.opponent_model is not None:
+                # 获取当前状态的动作掩码
+                opponent_mask = self.action_mask()
+                
+                # 使用对手模型选择动作
+                opponent_action, _ = self.opponent_model.predict(
+                    self.current_state, 
+                    action_masks=opponent_mask,
+                    deterministic=False
+                )
+            else:
+                # 使用随机策略
+                opponent_action = self._random_opponent_action()
+            
+            # 执行对手动作
+            next_state, opponent_reward, done, info = self.env.step(opponent_action)
+            self.current_state = next_state
+            
+            # 从智能体角度计算奖励（取反）
+            reward = -opponent_reward if not done else reward
+        
+        # 指定截断状态（gymnasium API要求）
+        truncated = False
+        
+        return self.current_state, reward, done, truncated, info
+    
+    def action_mask(self) -> np.ndarray:
+        """
+        获取动作掩码，指示哪些动作是有效的
+        
+        返回:
+        - 长度为board_size*board_size的布尔数组，True表示该位置可落子
+        """
+        valid_moves = self.env.get_valid_moves()
+        mask = np.zeros(self.board_size * self.board_size, dtype=bool)
+        mask[valid_moves] = True
+        return mask
+    
+    def render(self, mode='human'):
+        """渲染环境"""
+        if mode == 'human':
+            self.render_ax = self.env.render(ax=self.render_ax)
+            return None
+        else:
+            # 保存图像并返回RGB数组
+            self.render_ax = self.env.render(ax=self.render_ax)
+            return np.zeros((self.board_size * 30, self.board_size * 30, 3), dtype=np.uint8)
+    
+    def close(self):
+        """关闭环境"""
+        if self.render_ax is not None:
+            plt.close(self.render_ax.figure)
+            self.render_ax = None
+
+
+def gomoku_mask_fn(env: GomokuGymEnv) -> np.ndarray:
+    """
+    获取动作掩码的函数，用于MaskablePPO
+    
+    参数:
+    - env: GomokuGymEnv实例
+    
+    返回:
+    - 动作掩码数组
+    """
+    return env.action_mask()
+
+
+class ModelPoolUpdateCallback(BaseCallback):
+    """
+    回调函数，用于定期更新模型池
+    """
+    def __init__(self, model_pool: ModelPoolManager, update_freq: int = 10000, verbose: int = 0):
+        """
+        初始化回调函数
+        
+        参数:
+        - model_pool: 模型池管理器
+        - update_freq: 更新频率（步数）
+        - verbose: 详细程度
+        """
+        super().__init__(verbose)
+        self.model_pool = model_pool
+        self.update_freq = update_freq
+        self.iteration = 0
+    
+    def _on_step(self) -> bool:
+        """每步调用"""
+        if self.n_calls % self.update_freq == 0:
+            # 添加当前模型到模型池
+            self.iteration += 1
+            self.model_pool.add_model(self.model, self.iteration)
+            
+            # 输出当前状态
+            print(f"当前步数: {self.n_calls}, 模型池大小: {self.model_pool.get_model_count()}")
+        
+        return True
+
+
+def make_env(board_size=15, opponent_model=None, seed=0):
+    """创建环境的工厂函数，用于多进程向量化环境"""
+    def _init():
+        env = GomokuGymEnv(board_size=board_size, opponent_model=opponent_model)
+        env = ActionMasker(env, gomoku_mask_fn)  # 应用动作掩码
+        env.reset(seed=seed)
+        return env
+    return _init
+
+
+def update_opponent_models(vec_env, model_pool, update_prob=0.5):
+    """
+    更新向量环境中的对手模型
+    
+    参数:
+    - vec_env: 向量化环境
+    - model_pool: 模型池管理器
+    - update_prob: 更新概率
+    """
+    # 检查模型池是否有模型
+    if model_pool.get_model_count() == 0:
+        return
+    
+    # 遍历所有环境
+    for i in range(len(vec_env.envs)):
+        # 随机决定是否更新
+        if random.random() < update_prob:
+            # 从模型池中采样对手
+            opponent_model = model_pool.sample_opponent_model()
+            if opponent_model:
+                # 更新对手模型
+                vec_env.envs[i].unwrapped.set_opponent_model(opponent_model)
+
+
+def train_self_play_gomoku(
+    board_size=10,  # 使用10x10的棋盘训练更快
+    total_timesteps=1_000_000,
+    n_envs=4,  # 多进程数量
+    save_path="models/gomoku_self_play",
+    model_pool_size=100,  # 内存中保存的历史模型数量
+    model_update_freq=10000,  # 更新模型池的频率
+    opponent_update_freq=5000,  # 更新对手的频率
+    save_freq=10000,
+    learning_rate=3e-4,
+    gamma=0.99,  # 折扣因子
+    n_steps=2048,
+    batch_size=64,
+    n_epochs=10,  # PPO epochs
+    seed=0,
+    initial_exploration_steps=50000  # 初始探索步数，使用随机对手
+):
+    """
+    使用真正的自我博弈和Maskable PPO训练五子棋智能体
+    模型池直接在内存中维护，避免频繁磁盘I/O
+    
+    参数:
+    - board_size: 棋盘大小
+    - total_timesteps: 总训练步数
+    - n_envs: 并行环境数
+    - save_path: 最终模型保存路径
+    - model_pool_size: 内存中保存的历史模型数量
+    - model_update_freq: 更新模型池的频率（步数）
+    - opponent_update_freq: 更新对手的频率（步数）
+    - save_freq: 模型保存频率
+    - learning_rate: 学习率
+    - gamma: 折扣因子
+    - n_steps: 每次更新的步数
+    - batch_size: 批次大小
+    - n_epochs: 每次更新的epoch数
+    - seed: 随机种子
+    - initial_exploration_steps: 初始探索步数，使用随机对手
+    """
+    # 设置随机种子
+    set_random_seed(seed)
+    
+    # 创建保存目录
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    
+    # 创建模型池管理器
+    model_pool = ModelPoolManager(models_dir=os.path.dirname(save_path), max_models=model_pool_size)
+    print(f"初始化内存模型池，最大容量: {model_pool_size}")
+    
+    # 创建多进程环境 - 初始时使用随机对手
+    env_fns = [make_env(board_size=board_size, opponent_model=None, seed=seed+i) for i in range(n_envs)]
+    vec_env = SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns)
+    
+    # 设置模型参数
+    policy_kwargs = dict(
+        net_arch=[64, 64],  # 简单的两层网络结构
+        activation_fn=th.nn.ReLU,
+    )
+    
+    # 创建模型
+    model = MaskablePPO(
+        MaskableActorCriticPolicy,
+        vec_env,
+        learning_rate=learning_rate,
+        gamma=gamma,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        n_epochs=n_epochs,
+        verbose=1,
+        tensorboard_log="./logs/gomoku_tensorboard/",
+        policy_kwargs=policy_kwargs
+    )
+    
+    # 设置回调函数
+    model_pool_callback = ModelPoolUpdateCallback(
+        model_pool=model_pool,
+        update_freq=model_update_freq,
+        verbose=1
+    )
+    
+    checkpoint_callback = CheckpointCallback(
+        save_freq=save_freq // n_envs,  # 因为是多进程，所以除以环境数
+        save_path=os.path.dirname(save_path),
+        name_prefix=os.path.basename(save_path),
+        save_replay_buffer=False,
+        save_vecnormalize=False,
+    )
+    
+    # 训练循环
+    remaining_timesteps = total_timesteps
+    while remaining_timesteps > 0:
+        # 每次训练少量步数，方便更新对手
+        steps_to_train = min(opponent_update_freq, remaining_timesteps)
+        
+        model.learn(
+            total_timesteps=steps_to_train,
+            callback=[model_pool_callback, checkpoint_callback],
+            tb_log_name="gomoku_self_play",
+            reset_num_timesteps=False
+        )
+        
+        # 如果完成了初始探索阶段，确保添加一个模型到模型池
+        current_steps = total_timesteps - remaining_timesteps + steps_to_train
+        if current_steps >= initial_exploration_steps and model_pool.get_model_count() == 0:
+            print("完成初始探索阶段，添加第一个模型到内存模型池")
+            model_pool.add_model(model, iteration="initial")
+        
+        # 更新对手模型
+        update_opponent_models(vec_env, model_pool)
+        print("已更新对手模型")
+        
+        # 更新剩余步数
+        remaining_timesteps -= steps_to_train
+        print(f"已训练步数: {total_timesteps - remaining_timesteps}, 剩余步数: {remaining_timesteps}")
+    
+    # 保存最终模型
+    model.save(save_path + "_final")
+    
+    # 将最终模型添加到模型池
+    model_pool.add_model(model, iteration="final")
+    
+    # 关闭环境
+    vec_env.close()
+    
+    print(f"训练完成！模型已保存到: {save_path}_final")
+    return model
+
+
+def play_against_model(model_path, board_size=15, render=True):
+    """
+    让人类玩家与模型对战
+    
+    参数:
+    - model_path: 模型路径
+    - board_size: 棋盘大小
+    - render: 是否渲染游戏
+    """
+    # 加载模型
+    model = MaskablePPO.load(model_path)
+    
+    # 创建环境
+    env = GomokuGymEnv(board_size=board_size)
+    env = ActionMasker(env, gomoku_mask_fn)
+    
+    state, _ = env.reset()
+    done = False
+    
+    print("开始游戏！您执黑先行")
+    
+    while not done:
+        if env.env.current_player == 1:  # 人类玩家回合 (黑棋)
+            # 显示棋盘
+            if render:
+                env.render()
+            
+            # 获取有效动作
+            valid_moves = env.env.get_valid_moves()
+            
+            # 输入动作
+            action = -1
+            while action not in valid_moves:
+                try:
+                    x = input(f"请输入行坐标 (0-{board_size-1}): ")
+                    y = input(f"请输入列坐标 (0-{board_size-1}): ")
+                    action = int(x) * board_size + int(y)
+                    if action not in valid_moves:
+                        print("无效位置，请重试")
+                except ValueError:
+                    print("输入无效，请输入数字")
+        
+        else:  # 模型回合 (白棋)
+            # 获取动作掩码
+            action_mask = env.action_mask()
+            
+            # 模型选择动作
+            action, _ = model.predict(state, action_masks=action_mask, deterministic=True)
+            
+            # 显示模型动作
+            x, y = action // board_size, action % board_size
+            print(f"AI落子位置: ({x}, {y})")
+        
+        # 执行动作
+        state, reward, done, _, info = env.step(action)
+        
+        # 显示最新棋盘
+        if render:
+            env.render()
+        
+        # 显示游戏结果
+        if done:
+            if 'winner' in info and info['winner'] != 0:
+                winner = "黑棋(玩家)" if info['winner'] == 1 else "白棋(AI)"
+                print(f"游戏结束，{winner}胜利！")
+            else:
+                print("游戏结束，平局！")
+    
+    env.close()
+
+
+if __name__ == "__main__":
+    # 训练模型
+    trained_model = train_self_play_gomoku(
+        board_size=10,  # 使用较小棋盘加速训练
+        total_timesteps=500_000,  # 可根据需要调整
+        n_envs=4,  # 多进程数量
+        save_path="models/gomoku_self_play",
+        model_pool_size=100,  # 在内存中保存100个历史模型
+        model_update_freq=20000,  # 模型池更新频率
+        opponent_update_freq=10000,  # 对手更新频率
+        initial_exploration_steps=50000  # 初始探索步数，使用随机对手
+    )
+    
+    # 可选：与训练好的模型对战
+    # play_against_model("models/gomoku_self_play_final", board_size=10)

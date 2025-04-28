@@ -496,6 +496,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "sb3-contrib" },
     { name = "stable-baselines3" },
 ]
 
@@ -503,7 +504,20 @@ dependencies = [
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.1" },
     { name = "numpy", specifier = ">=2.2.3" },
+    { name = "sb3-contrib", specifier = ">=2.6.0" },
     { name = "stable-baselines3", specifier = ">=2.6.0" },
+]
+
+[[package]]
+name = "sb3-contrib"
+version = "2.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "stable-baselines3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/53/5acb9ff685a68437329958960886b73425850da02ace63a152781a27ce0d/sb3_contrib-2.6.0.tar.gz", hash = "sha256:eaf7f3268706ee878140decfc743b58e96182e73b5c14872e1c7017ca31e465f", size = 89679 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/35/0b/2aa9be7796c372d17400d55f90f19ddc5b1b242cb996db0bf9ae6ee370e8/sb3_contrib-2.6.0-py3-none-any.whl", hash = "sha256:7440d2a47dcd2996c6f44286a059245f62433d2565951c445673c6a83742ecc2", size = 92768 },
 ]
 
 [[package]]
