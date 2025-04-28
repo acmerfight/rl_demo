@@ -704,8 +704,7 @@ def train_self_play_gomoku(
         current_steps = total_timesteps - remaining_timesteps + steps_to_train
         if current_steps >= initial_exploration_steps and model_pool.get_model_count() == 0:
             print("完成初始探索阶段，添加第一个模型到内存模型池")
-            # TODO: Implement win rate calculation if needed
-            model_pool.add_model(model, iteration="initial", win_rate=None)
+            model_pool.add_model(model, iteration="initial", win_rate=0.0)
         
         # 更新对手模型
         update_opponent_models(vec_env, model_pool)
@@ -719,8 +718,7 @@ def train_self_play_gomoku(
     model.save(save_path + "_final")
     
     # 将最终模型添加到模型池
-    # TODO: Implement win rate calculation if needed
-    model_pool.add_model(model, iteration="final", win_rate=None)
+    model_pool.add_model(model, iteration="final", win_rate=0.0)
     
     # 关闭环境
     vec_env.close()
