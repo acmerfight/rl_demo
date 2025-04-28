@@ -716,13 +716,10 @@ def train_self_play_gomoku(
     
     # 保存最终模型
     model.save(save_path + "_final")
-    
-    # 将最终模型添加到模型池
-    model_pool.add_model(model, iteration="final", win_rate=0.0)
-    
+
     # 关闭环境
     vec_env.close()
-    
+
     print(f"训练完成！模型已保存到: {save_path}_final")
     return model
 
