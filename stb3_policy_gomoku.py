@@ -259,7 +259,7 @@ class ModelPoolManager:
     模型池管理器，用于管理历史模型
     直接在内存中保存模型，不需要从磁盘加载
     """
-    def __init__(self, models_dir="models/gomoku_pool", max_models=100):
+    def __init__(self, max_models=100):
         """
         初始化模型池管理器
         
@@ -267,14 +267,8 @@ class ModelPoolManager:
         - models_dir: 模型保存目录（仅用于定期保存，不再用于加载）
         - max_models: 池中最大模型数量
         """
-        self.models_dir = models_dir
         self.max_models = max_models
-        
-        # 直接在内存中存储模型
         self.models = []  # [(model, name, iteration)]形式存储
-        
-        # 确保目录存在（仅用于保存）
-        os.makedirs(models_dir, exist_ok=True)
     
     def add_model(self, model, iteration):
         """
@@ -302,10 +296,6 @@ class ModelPoolManager:
         if len(self.models) > self.max_models:
             _, removed_name, _ = self.models.pop(0)  # 移除最早添加的模型
             print(f"已从模型池中移除旧模型: {removed_name}")
-        
-        # 可选：定期保存到磁盘（如果需要持久化）
-        model_path = os.path.join(self.models_dir, f"{model_name}.zip")
-        model.save(model_path)
         
         return model_name
     
@@ -617,7 +607,7 @@ def train_self_play_gomoku(
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     # 创建模型池管理器
-    model_pool = ModelPoolManager(models_dir=os.path.dirname(save_path), max_models=model_pool_size)
+    model_pool = ModelPoolManager(max_models=model_pool_size)
     print(f"初始化内存模型池，最大容量: {model_pool_size}")
     
     # 创建多进程环境 - 初始时使用随机对手
