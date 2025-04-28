@@ -823,7 +823,6 @@ def manage_historical_opponents(historical_opponents, agent, env, episode, save_
 def update_visualization(ax2, episode_rewards, win_history):
     """更新训练进度可视化"""
     ax2.clear()
-    ax2.plot(episode_rewards, 'b-', alpha=0.3, label='Raw Reward')
     
     # 添加移动平均线
     window = min(50, len(episode_rewards))
