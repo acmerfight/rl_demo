@@ -268,15 +268,16 @@ class ModelPoolManager:
         - max_models: 池中最大模型数量
         """
         self.max_models = max_models
-        self.models = []  # [(model, name, iteration)]形式存储
+        self.models = []  # [(model, name, iteration, win_rate)]形式存储
     
-    def add_model(self, model, iteration):
+    def add_model(self, model, iteration, win_rate: Optional[float] = None):
         """
         添加新模型到模型池
         
         参数:
         - model: 要添加的模型对象
         - iteration: 当前迭代次数
+        - win_rate: 可选，模型的胜率
         
         返回:
         - 模型名称
@@ -289,12 +290,12 @@ class ModelPoolManager:
         model_copy = deepcopy(model)
         
         # 添加到内存池
-        self.models.append((model_copy, model_name, iteration))
-        print(f"已将模型添加到内存模型池: {model_name}")
+        self.models.append((model_copy, model_name, iteration, win_rate))
+        print(f"已将模型添加到内存模型池: {model_name}, Win Rate: {win_rate}")
         
         # 如果模型数量超过上限，移除最旧的模型
         if len(self.models) > self.max_models:
-            _, removed_name, _ = self.models.pop(0)  # 移除最早添加的模型
+            _, removed_name, _, _ = self.models.pop(0)  # 移除最早添加的模型
             print(f"已从模型池中移除旧模型: {removed_name}")
         
         return model_name
@@ -313,7 +314,7 @@ class ModelPoolManager:
             return None
         
         # 随机选择一个模型
-        sampled_model, model_name, _ = random.choice(self.models)
+        sampled_model, model_name, _, _ = random.choice(self.models)
         print(f"从内存池中选择对手模型: {model_name}")
         return sampled_model
     
@@ -499,12 +500,12 @@ def gomoku_mask_fn(env: GomokuGymEnv) -> np.ndarray:
 
 class ModelPoolUpdateCallback(BaseCallback):
     """
-    回调函数，用于定期更新模型池
+    回调函数，用于定期更新模型池并记录胜率
     """
     def __init__(self, model_pool: ModelPoolManager, update_freq: int = 10000, verbose: int = 0):
         """
         初始化回调函数
-        
+
         参数:
         - model_pool: 模型池管理器
         - update_freq: 更新频率（步数）
@@ -514,17 +515,54 @@ class ModelPoolUpdateCallback(BaseCallback):
         self.model_pool = model_pool
         self.update_freq = update_freq
         self.iteration = 0
-    
+        # 初始化胜率统计
+        self.wins = 0
+        self.losses = 0
+        self.draws = 0
+
     def _on_step(self) -> bool:
         """每步调用"""
-        if self.n_calls % self.update_freq == 0:
-            # 添加当前模型到模型池
+        # 检查是否有环境完成
+        for i, done in enumerate(self.locals['dones']):
+            if done:
+                # 获取该环境的信息字典
+                info = self.locals['infos'][i]
+                if 'winner' in info:
+                    winner = info['winner']
+                    # 假设训练的智能体视角总是 1 (黑棋)
+                    # 如果获胜者是 1，则记录为胜利
+                    if winner == 1:
+                        self.wins += 1
+                    # 如果获胜者是 -1，则记录为失败
+                    elif winner == -1:
+                        self.losses += 1
+                    # 如果获胜者是 0 (或无胜者，视为平局)
+                    else:
+                        self.draws += 1
+
+        # 检查是否达到更新频率
+        if self.n_calls > 0 and self.n_calls % self.update_freq == 0:
+            # 计算胜率
+            total_games = self.wins + self.losses + self.draws
+            win_rate = self.wins / total_games if total_games > 0 else 0.0
+
+            if self.verbose > 0:
+                print(f"\nSteps: {self.n_calls}, Updating model pool.")
+                print(f"Stats since last update: Wins={self.wins}, Losses={self.losses}, Draws={self.draws}, Total={total_games}")
+                print(f"Calculated Win Rate: {win_rate:.3f}")
+
+            # 添加当前模型到模型池，并传入胜率
             self.iteration += 1
-            self.model_pool.add_model(self.model, self.iteration)
-            
+            self.model_pool.add_model(self.model, self.iteration, win_rate=win_rate)
+
             # 输出当前状态
             print(f"当前步数: {self.n_calls}, 模型池大小: {self.model_pool.get_model_count()}")
-        
+
+            # 重置胜率统计
+            self.wins = 0
+            self.losses = 0
+            self.draws = 0
+
         return True
 
 
@@ -666,7 +704,8 @@ def train_self_play_gomoku(
         current_steps = total_timesteps - remaining_timesteps + steps_to_train
         if current_steps >= initial_exploration_steps and model_pool.get_model_count() == 0:
             print("完成初始探索阶段，添加第一个模型到内存模型池")
-            model_pool.add_model(model, iteration="initial")
+            # TODO: Implement win rate calculation if needed
+            model_pool.add_model(model, iteration="initial", win_rate=None)
         
         # 更新对手模型
         update_opponent_models(vec_env, model_pool)
@@ -680,7 +719,8 @@ def train_self_play_gomoku(
     model.save(save_path + "_final")
     
     # 将最终模型添加到模型池
-    model_pool.add_model(model, iteration="final")
+    # TODO: Implement win rate calculation if needed
+    model_pool.add_model(model, iteration="final", win_rate=None)
     
     # 关闭环境
     vec_env.close()
