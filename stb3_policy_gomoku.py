@@ -276,8 +276,6 @@ class ModelPoolManager:
         参数:
         - max_models: 池中最大模型数量 (必须是正整数)
         """
-        if not isinstance(max_models, int) or max_models <= 0:
-            raise ValueError("max_models 必须是一个正整数。")
         self.max_models = max_models
         # 使用列表存储 ModelInfo 对象
         self.models: List[ModelInfo] = []
@@ -299,13 +297,7 @@ class ModelPoolManager:
         model_name = f"model_iter_{iteration}_{timestamp}"
 
         # 深拷贝模型以存储其状态快照
-        try:
-            # 注意: deepcopy 可能对某些复杂的模型对象非常耗时或失败
-            model_copy = deepcopy(model)
-        except Exception as e:
-            # 如果深拷贝失败，记录警告并存储原始引用（这可能导致后续问题）
-            print(f"警告：无法为模型池深拷贝模型。错误: {e}。将存储原始引用（存在被修改风险）。")
-            model_copy = model
+        model_copy = deepcopy(model)
 
         # 创建模型信息对象
         new_model_info = ModelInfo(model=model_copy, name=model_name, iteration=iteration, win_rate=win_rate)
@@ -324,20 +316,13 @@ class ModelPoolManager:
         if len(self.models) > self.max_models:
             # 使用 min 和 lambda 函数简洁地查找胜率最低的模型及其索引
             # 将 None 胜率视为负无穷大，以便优先移除
-            try:
-                min_index, model_to_remove = min(
-                    enumerate(self.models),
-                    key=lambda item: item[1].win_rate if item[1].win_rate is not None else -float('inf')
-                )
-            except ValueError:
-                # 如果列表为空（理论上不会在这里发生），则不执行任何操作
-                return
-
+            min_index, _ = min(
+                enumerate(self.models),
+                key=lambda item: item[1].win_rate if item[1].win_rate is not None else -float('inf')
+            )
             # 移除模型
             removed_info = self.models.pop(min_index)
             print(f"模型池已满，已移除胜率最低的模型: {removed_info.name} (Win Rate: {removed_info.win_rate})")
-            # 可选：尝试显式删除模型对象以帮助垃圾回收（如果需要）
-            # del removed_info
 
     def sample_opponent_model(self) -> Optional[StableBaselinesModel]:
         """
