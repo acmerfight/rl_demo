@@ -633,7 +633,7 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
 def train_self_play_gomoku(
     board_size=10,  # 使用10x10的棋盘训练更快
     total_timesteps=1_000_000,
-    n_envs=4,  # 多进程数量
+    n_envs=max(1, os.cpu_count() // 2 if os.cpu_count() else 1), # Default n_envs based on CPU count
     save_path="models/gomoku_self_play",
     model_pool_size=100,  # 内存中保存的历史模型数量
     model_update_freq=10000,  # 更新模型池的频率
@@ -681,6 +681,7 @@ def train_self_play_gomoku(
     # 创建多进程环境 - 初始时使用随机对手
     env_fns = [make_env(board_size=board_size, opponent_model=None, seed=seed+i) for i in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns)
+    print(f"Initialized {n_envs} parallel environments.") # Added log for n_envs
     
     # 确定设备
     if th.backends.mps.is_available():
@@ -839,12 +840,9 @@ if __name__ == "__main__":
     trained_model = train_self_play_gomoku(
         board_size=10,  # 使用较小棋盘加速训练
         total_timesteps=500_000,  # 可根据需要调整
-        n_envs=4,  # 多进程数量
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 在内存中保存100个历史模型
         model_update_freq=20000,  # 模型池更新频率
-        opponent_update_freq=10000,  # 对手更新频率
-        initial_exploration_steps=50000  # 初始探索步数，使用随机对手
     )
     
     # 可选：与训练好的模型对战
