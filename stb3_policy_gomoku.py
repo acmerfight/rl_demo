@@ -621,13 +621,14 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
     if model_pool.get_model_count() == 0:
         return
     
-    # 遍历所有环境
-    for i in range(len(vec_env.envs)):
+    # 为每个环境决定是否更新及使用哪个模型
+    for i in range(vec_env.num_envs):
         # 随机决定是否更新
         if random.random() < update_prob:
             # 从模型池中采样对手
             opponent_model = model_pool.sample_opponent_model()
-            vec_env.envs[i].unwrapped.set_opponent_model(opponent_model)
+            # 使用env_method调用子进程中的set_opponent_model方法
+            vec_env.env_method("set_opponent_model", opponent_model, indices=[i])
 
 
 def train_self_play_gomoku(
