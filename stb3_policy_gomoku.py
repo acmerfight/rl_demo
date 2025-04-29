@@ -150,23 +150,28 @@ class GomokuEnv:
             self.winner = self.current_player
             info['winner'] = self.winner
             
-            # 计算与步数相关的奖励大小
+            # --- 计算胜负奖励 (鼓励尽快获胜) ---
             num_steps = len(self.history)
-            min_win_steps = 5  # 五子棋获胜所需的最少手数
-            max_steps = self.board_size * self.board_size
+            min_win_steps = 5  # 理论上最快获胜所需的步数
+            max_steps = self.board_size * self.board_size # 最大可能步数
+
+            # 定义奖励参数
+            fastest_win_reward = 2.0  # 最快获胜时的奖励
+            slowest_win_reward = 1.0  # 最慢获胜时的奖励
+            # 失败惩罚与最慢获胜奖励的绝对值一致
+            loss_penalty = -slowest_win_reward 
+
+            # 计算获胜步数相对于最快和最慢情况的归一化进度 [0, 1]
+            # 0 表示接近最快获胜, 1 表示接近最慢获胜
+            step_range = max(1, max_steps - min_win_steps) # 防止除以零
+            # 使用 clamp (max(0, min(1, ...))) 确保值在 [0, 1] 区间内
+            progress_to_slowest = max(0, min(1, (num_steps - min_win_steps) / step_range))
+
+            # 线性插值计算获胜奖励：从 fastest_win_reward 向 slowest_win_reward 递减
+            win_reward_magnitude = fastest_win_reward - progress_to_slowest * (fastest_win_reward - slowest_win_reward)
             
-            # 确保分母安全（不为零）
-            denominator = max(1, max_steps - min_win_steps)
-            
-            base_reward = 1.0
-            # 将奖励从 1.0 (最快获胜) 线性缩减至接近 0.1 (最慢获胜)
-            win_reward_magnitude = base_reward - (base_reward - 0.1) * max(0, num_steps - min_win_steps) / denominator
-            
-            # 确保获胜奖励至少为 0.1
-            win_reward_magnitude = max(0.1, win_reward_magnitude)
-            
-            # 根据智能体视角分配奖励 (获胜为正，失败为负)
-            reward = win_reward_magnitude if self.current_player == self.agent_perspective else -base_reward
+            # 根据智能体视角分配最终奖励
+            reward = win_reward_magnitude if self.current_player == self.agent_perspective else loss_penalty
             
         elif draw:
             self.done = True
