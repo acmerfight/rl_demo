@@ -164,7 +164,7 @@ class GomokuEnv:
             # 计算获胜步数相对于最快和最慢情况的归一化进度 [0, 1]
             # 0 表示接近最快获胜, 1 表示接近最慢获胜
             step_range =  max_steps - min_win_steps
-            assert step_range >= min_win_steps, "step_range must be greater than or equal to min_win_steps = %d" % min_win_steps
+            assert num_steps >= min_win_steps, "num_steps must be greater than or equal to min_win_steps = %d" % min_win_steps
             progress_to_slowest = (num_steps - min_win_steps) / step_range
 
             # 线性插值计算获胜奖励：从 fastest_win_reward 向 slowest_win_reward 递减
