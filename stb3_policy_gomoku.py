@@ -158,14 +158,15 @@ class GomokuEnv:
             # 确保分母安全（不为零）
             denominator = max(1, max_steps - min_win_steps)
             
+            base_reward = 1.0
             # 将奖励从 1.0 (最快获胜) 线性缩减至接近 0.1 (最慢获胜)
-            win_reward_magnitude = 1.0 - 0.9 * max(0, num_steps - min_win_steps) / denominator
+            win_reward_magnitude = base_reward - (base_reward - 0.1) * max(0, num_steps - min_win_steps) / denominator
             
             # 确保获胜奖励至少为 0.1
             win_reward_magnitude = max(0.1, win_reward_magnitude)
             
             # 根据智能体视角分配奖励 (获胜为正，失败为负)
-            reward = win_reward_magnitude if self.current_player == self.agent_perspective else -win_reward_magnitude
+            reward = win_reward_magnitude if self.current_player == self.agent_perspective else -base_reward
             
         elif draw:
             self.done = True
