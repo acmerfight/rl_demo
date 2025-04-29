@@ -280,14 +280,14 @@ class ModelPoolManager:
         # 使用列表存储 ModelInfo 对象
         self.models: List[ModelInfo] = []
 
-    def add_model(self, model: StableBaselinesModel, iteration: Any, win_rate: Optional[float] = None) -> str:
+    def add_model(self, model: StableBaselinesModel, iteration: Any, win_rate: float) -> str:
         """
         添加新模型到模型池。如果池已满，则移除胜率最低的模型。
 
         参数:
         - model: 要添加的模型对象 (将进行深拷贝)
         - iteration: 当前迭代标识
-        - win_rate: 可选，模型的胜率
+        - win_rate: 模型的胜率
 
         返回:
         - 生成的模型名称
@@ -318,13 +318,13 @@ class ModelPoolManager:
             # 将 None 胜率视为负无穷大，以便优先移除
             min_index, _ = min(
                 enumerate(self.models),
-                key=lambda item: item[1].win_rate if item[1].win_rate is not None else -float('inf')
+                key=lambda item: item[1].win_rate 
             )
             # 移除模型
             removed_info = self.models.pop(min_index)
             print(f"模型池已满，已移除胜率最低的模型: {removed_info.name} (Win Rate: {removed_info.win_rate})")
 
-    def sample_opponent_model(self) -> Optional[StableBaselinesModel]:
+    def sample_opponent_model(self) -> StableBaselinesModel:
         """
         从模型池中根据胜率加权随机选择一个对手模型。
         胜率越高的模型被选中的概率越大。
@@ -336,24 +336,12 @@ class ModelPoolManager:
             print("模型池为空，无法采样对手。")
             return None
 
-        # 提取模型列表用于选择
-        models_in_pool = [info.model for info in self.models]
-
         # 计算权重：胜率 + 基础权重 (epsilon)
         # 基础权重确保所有模型（包括胜率为0或None的模型）都有机会被选中
         base_weight = 0.01
-        weights = [(info.win_rate if info.win_rate is not None else 0.0) + base_weight for info in self.models]
-
-        try:
-            # 执行加权随机选择
-            chosen_index = random.choices(range(len(self.models)), weights=weights, k=1)[0]
-        except ValueError:
-            # 处理所有权重都无效的情况（虽然 base_weight 应该防止这种情况）
-            print("警告：无法执行加权采样（例如，权重无效）。回退到均匀随机选择。")
-            if not models_in_pool: 
-                return None # 再次检查以防万一  
-            chosen_index = random.randrange(len(self.models)) # 均匀随机选择作为后备
-
+        weights = [info.win_rate + base_weight for info in self.models]
+        # 执行加权随机选择
+        chosen_index = random.choices(range(len(self.models)), weights=weights, k=1)[0]
         # 获取选中的模型及其信息用于日志记录
         chosen_model_info = self.models[chosen_index]
         sampled_model = chosen_model_info.model
@@ -641,9 +629,7 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
         if random.random() < update_prob:
             # 从模型池中采样对手
             opponent_model = model_pool.sample_opponent_model()
-            if opponent_model:
-                # 更新对手模型
-                vec_env.envs[i].unwrapped.set_opponent_model(opponent_model)
+            vec_env.envs[i].unwrapped.set_opponent_model(opponent_model)
 
 
 def train_self_play_gomoku(
