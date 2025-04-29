@@ -7,8 +7,6 @@ import gymnasium as gym
 from gymnasium import spaces
 import torch as th
 import random
-import glob
-import time
 from datetime import datetime
 from copy import deepcopy
 
@@ -521,7 +519,7 @@ class GomokuGymEnv(gym.Env):
 
 def gomoku_mask_fn(env: GomokuGymEnv) -> np.ndarray:
     """
-    获取动作掩码的函数，用于MaskablePPO
+    获取动作掩码的函数，用于 MaskablePPO
     
     参数:
     - env: GomokuGymEnv实例
@@ -684,6 +682,14 @@ def train_self_play_gomoku(
     env_fns = [make_env(board_size=board_size, opponent_model=None, seed=seed+i) for i in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns)
     
+    # 确定设备
+    if th.backends.mps.is_available():
+        device = "mps"
+        print("检测到MPS设备，将使用MPS进行训练。")
+    else:
+        device = "auto" # 自动选择 CUDA 或 CPU
+        print("未检测到MPS设备，将使用自动选择的设备 (CUDA 或 CPU)。")
+        
     # 设置模型参数
     policy_kwargs = dict(
         net_arch=[64, 64],  # 简单的两层网络结构
@@ -701,7 +707,8 @@ def train_self_play_gomoku(
         n_epochs=n_epochs,
         verbose=1,
         tensorboard_log="./logs/gomoku_tensorboard/",
-        policy_kwargs=policy_kwargs
+        policy_kwargs=policy_kwargs,
+        device=device  # 传递设备参数
     )
     
     # 设置回调函数
