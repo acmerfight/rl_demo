@@ -150,8 +150,22 @@ class GomokuEnv:
             self.winner = self.current_player
             info['winner'] = self.winner
             
-            # 计算智能体视角的奖励
-            reward = 1.0 if self.current_player == self.agent_perspective else -1.0
+            # 计算与步数相关的奖励大小
+            num_steps = len(self.history)
+            min_win_steps = 5  # 五子棋获胜所需的最少手数
+            max_steps = self.board_size * self.board_size
+            
+            # 确保分母安全（不为零）
+            denominator = max(1, max_steps - min_win_steps)
+            
+            # 将奖励从 1.0 (最快获胜) 线性缩减至接近 0.1 (最慢获胜)
+            win_reward_magnitude = 1.0 - 0.9 * max(0, num_steps - min_win_steps) / denominator
+            
+            # 确保获胜奖励至少为 0.1
+            win_reward_magnitude = max(0.1, win_reward_magnitude)
+            
+            # 根据智能体视角分配奖励 (获胜为正，失败为负)
+            reward = win_reward_magnitude if self.current_player == self.agent_perspective else -win_reward_magnitude
             
         elif draw:
             self.done = True
@@ -771,7 +785,7 @@ def train_self_play_gomoku(
 
 def play_against_model(model_path, board_size=15, render=True):
     """
-    让人类玩家与模型对战
+    让人类玩家与模型对战，通过点击棋盘落子
     
     参数:
     - model_path: 模型路径
@@ -788,28 +802,60 @@ def play_against_model(model_path, board_size=15, render=True):
     state, _ = env.reset()
     done = False
     
-    print("开始游戏！您执黑先行")
+    # 创建图形和轴以进行交互式绘图
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111)
+    env.render_ax = ax
+    
+    # 用于存储用户点击的位置
+    click_coords = [None]
+    
+    def on_click(event):
+        """处理鼠标点击事件"""
+        if event.xdata is not None and event.ydata is not None:
+            # 将浮点坐标转换为整数棋盘坐标
+            x = int(round(event.xdata))
+            y = int(round(event.ydata))
+            
+            # 确保坐标在棋盘范围内
+            if 0 <= x < board_size and 0 <= y < board_size:
+                action = x * board_size + y
+                valid_moves = env.env.get_valid_moves()
+                
+                if action in valid_moves:
+                    # 存储有效点击
+                    click_coords[0] = action
+                    plt.close(fig)  # 关闭当前图形以继续游戏流程
+                else:
+                    plt.title("无效落子位置，请重试", color='red')
+                    fig.canvas.draw_idle()
+    
+    print("开始游戏！您执黑先行。点击棋盘落子。")
     
     while not done:
         if env.env.current_player == 1:  # 人类玩家回合 (黑棋)
             # 显示棋盘
             if render:
-                env.render()
-            
-            # 获取有效动作
-            valid_moves = env.env.get_valid_moves()
-            
-            # 输入动作
-            action = -1
-            while action not in valid_moves:
-                try:
-                    x = input(f"请输入行坐标 (0-{board_size-1}): ")
-                    y = input(f"请输入列坐标 (0-{board_size-1}): ")
-                    action = int(x) * board_size + int(y)
-                    if action not in valid_moves:
-                        print("无效位置，请重试")
-                except ValueError:
-                    print("输入无效，请输入数字")
+                env.render_ax = env.env.render(ax=ax)
+                ax.set_title("轮到您落子 (黑棋)", fontsize=14)
+                
+                # 连接点击事件
+                cid = fig.canvas.mpl_connect('button_press_event', on_click)
+                
+                # 显示图形并等待点击
+                plt.show()
+                
+                # 断开事件连接
+                fig.canvas.mpl_disconnect(cid)
+                
+                # 获取用户动作
+                action = click_coords[0]
+                click_coords[0] = None  # 重置点击坐标
+                
+                # 创建新图形用于显示
+                fig = plt.figure(figsize=(8, 8))
+                ax = fig.add_subplot(111)
+                env.render_ax = ax
         
         else:  # 模型回合 (白棋)
             # 获取动作掩码
@@ -826,16 +872,19 @@ def play_against_model(model_path, board_size=15, render=True):
         state, reward, done, _, info = env.step(action)
         
         # 显示最新棋盘
-        if render:
-            env.render()
+        if render and not (env.env.current_player == 1 and not done):
+            env.render_ax = env.env.render(ax=ax)
+            plt.pause(0.5)  # 给玩家一点时间查看AI的落子
         
         # 显示游戏结果
         if done:
+            env.render_ax = env.env.render(ax=ax)
             if 'winner' in info and info['winner'] != 0:
                 winner = "黑棋(玩家)" if info['winner'] == 1 else "白棋(AI)"
-                print(f"游戏结束，{winner}胜利！")
+                ax.set_title(f"游戏结束，{winner}胜利！", fontsize=14, color='blue')
             else:
-                print("游戏结束，平局！")
+                ax.set_title("游戏结束，平局！", fontsize=14, color='green')
+            plt.show()
     
     env.close()
 
