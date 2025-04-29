@@ -705,7 +705,7 @@ def train_self_play_gomoku(
         n_steps=n_steps,
         batch_size=batch_size,
         n_epochs=n_epochs,
-        verbose=1,
+        verbose=2,  # 增加日志详细程度
         tensorboard_log="./logs/gomoku_tensorboard/",
         policy_kwargs=policy_kwargs,
         device=device  # 传递设备参数
