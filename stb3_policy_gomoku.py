@@ -644,8 +644,8 @@ def train_self_play_gomoku(
     save_freq=10000,
     learning_rate=3e-4,
     gamma=0.99,  # 折扣因子
-    n_steps=2048,
-    batch_size=64,
+    n_steps=256,
+    batch_size=128,
     n_epochs=10,  # PPO epochs
     seed=0,
     initial_exploration_steps=50000  # 初始探索步数，使用随机对手
