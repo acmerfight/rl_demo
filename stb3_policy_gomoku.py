@@ -17,6 +17,8 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.ppo_mask import MaskablePPO
+from stable_baselines3.common.torch_layers import NatureCNN
+
 
 class GomokuEnv:
     """
@@ -692,10 +694,12 @@ def train_self_play_gomoku(
         device = "auto" # 自动选择 CUDA 或 CPU
         print("未检测到MPS设备，将使用自动选择的设备 (CUDA 或 CPU)。")
         
-    # 设置模型参数
+    # 设置模型参数 - 使用 CNN
     policy_kwargs = dict(
-        net_arch=[64, 64],  # 简单的两层网络结构
-        activation_fn=th.nn.ReLU,
+        features_extractor_class=NatureCNN,           # 使用 NatureCNN 作为特征提取器
+        features_extractor_kwargs=dict(features_dim=256), # CNN 输出 256 维特征
+        activation_fn=th.nn.ReLU,                    # 激活函数
+        net_arch=dict(pi=[64], vf=[64])              # 特征提取后，策略和价值网络各有一个64单元的隐藏层
     )
     
     # 创建模型
