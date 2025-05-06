@@ -358,7 +358,7 @@ class ModelPoolManager:
 
         # 计算权重：胜率 + 基础权重 (epsilon)
         # 基础权重确保所有模型（包括胜率为0或None的模型）都有机会被选中
-        base_weight = 0.01
+        base_weight = 0.05
         weights = [info.win_rate + base_weight for info in self.models]
         # 执行加权随机选择
         chosen_index = random.choices(range(len(self.models)), weights=weights, k=1)[0]
