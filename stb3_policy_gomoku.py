@@ -899,7 +899,7 @@ if __name__ == "__main__":
     # 训练模型
     trained_model = train_self_play_gomoku(
         board_size=10,  # 使用较小棋盘加速训练
-        total_timesteps=500_000,  # 可根据需要调整
+        total_timesteps=5000 * 10000,  # 可根据需要调整
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 在内存中保存100个历史模型
         model_update_freq=20000,  # 模型池更新频率
