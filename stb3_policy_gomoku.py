@@ -663,7 +663,7 @@ def train_self_play_gomoku(
     opponent_update_freq=5000,  # 更新对手的频率
     save_freq=10000,
     learning_rate=3e-4,
-    gamma=0.99,  # 折扣因子
+    gamma=0.999,  # 折扣因子
     n_steps=256,
     batch_size=128,
     n_epochs=10,  # PPO epochs
