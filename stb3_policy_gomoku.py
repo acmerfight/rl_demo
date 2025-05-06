@@ -502,8 +502,8 @@ class GomokuGymEnv(gym.Env):
             next_state, opponent_reward, done, info = self.env.step(opponent_action)
             self.current_state = next_state
             
-            # 从智能体角度计算奖励（取反）
-            reward = -opponent_reward
+            # 从智能体角度计算奖励（无需取反，opponent_reward已是智能体视角）
+            reward = opponent_reward
         
         # 指定截断状态（gymnasium API要求）
         truncated = False
