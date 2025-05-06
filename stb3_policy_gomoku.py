@@ -788,7 +788,7 @@ def train_self_play_gomoku(
     )
     
     checkpoint_callback = CheckpointCallback(
-        save_freq=save_freq // n_envs,  # 因为是多进程，所以除以环境数
+        save_freq=save_freq,  # 因为是多进程，所以除以环境数
         save_path=os.path.dirname(save_path),
         name_prefix=os.path.basename(save_path),
         save_replay_buffer=False,
