@@ -152,7 +152,7 @@ class GomokuEnv:
             
             # --- 计算胜负奖励 (鼓励尽快获胜) ---
             num_steps = len(self.history)
-            min_win_steps = 5  # 理论上最快获胜所需的步数
+            min_win_steps = 9  # 理论上最快获胜所需的步数
             max_steps = self.board_size * self.board_size # 最大可能步数
 
             # 定义奖励参数
