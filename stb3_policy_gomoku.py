@@ -423,6 +423,7 @@ class GomokuGymEnv(gym.Env):
         # 用于保存当前游戏信息
         self.current_state = None
         self.render_ax = None
+        self.agent_player_id = 1 # 智能体扮演的角色 (1 黑棋, -1 白棋), 会在reset时随机化
     
     def set_opponent_model(self, model):
         """
@@ -446,15 +447,53 @@ class GomokuGymEnv(gym.Env):
     def reset(self, seed=None, options=None):
         """重置环境"""
         if seed is not None:
-            np.random.seed(seed)
+            np.random.seed(seed) # 用于决定智能体角色
         
-        # 重置内部环境
-        self.current_state = self.env.reset()
+        # 随机决定智能体是扮演黑棋 (1) 还是白棋 (-1)
+        self.agent_player_id = np.random.choice([1, -1])
         
-        # 信息字典
-        info = {}
+        # 重置内部环境 (GomokuEnv.reset() 会将 current_player 设为 1)
+        _ = self.env.reset()
+        # 设置GomokuEnv从哪个视角计算奖励
+        self.env.set_agent_perspective(self.agent_player_id)
         
-        return self.current_state, info
+        # 信息字典 (不直接传递 agent_player_id，回调会通过 get_attr 获取)
+        returned_info = {} 
+        
+        # 如果智能体扮演白棋 (-1)，则对手 (黑棋) 先手
+        if self.agent_player_id == -1:
+            # 此时 self.env.current_player 应该是 1 (黑棋)
+            assert self.env.current_player == 1, "If agent is White, opponent (Black) should be current player."
+            
+            opponent_action_mask = self.action_mask() # 对手 (黑棋) 的动作掩码
+            opponent_action = None
+            
+            # 获取对手 (黑棋) 的初始观察状态
+            initial_board_state_for_opponent = self.env._get_state()
+            
+            if not self.use_random_opponent and self.opponent_model is not None:
+                opponent_action, _ = self.opponent_model.predict(
+                    initial_board_state_for_opponent,
+                    action_masks=opponent_action_mask,
+                    deterministic=False # 通常训练时对手也应有探索
+                )
+            else:
+                opponent_action = self._random_opponent_action()
+            
+            # 执行对手 (黑棋) 的第一步
+            # next_state_after_opponent 是智能体 (白棋) 将观察到的第一个状态
+            # 奖励和结束状态与此步相关，但主要用于设置棋盘
+            next_state_after_opponent, _, done_after_opponent_move, _ = self.env.step(opponent_action)
+            self.current_state = next_state_after_opponent
+            
+            # 五子棋第一步不可能结束游戏
+            assert not done_after_opponent_move, "Game should not end after opponent's first move in reset."
+        
+        else: # 智能体扮演黑棋 (1)
+            # 智能体先手，观察空棋盘
+            self.current_state = self.env._get_state()
+            
+        return self.current_state, returned_info
     
     def step(self, action):
         """
@@ -583,16 +622,18 @@ class ModelPoolUpdateCallback(BaseCallback):
                 info = self.locals['infos'][i]
                 if 'winner' in info:
                     winner = info['winner']
-                    # 假设训练的智能体视角总是 1 (黑棋)
-                    # 如果获胜者是 1，则记录为胜利
-                    if winner == 1:
+                    # 获取当前环境的智能体角色
+                    # ModelPoolUpdateCallback.training_env 是 VecEnv 实例
+                    agent_plays_as = self.training_env.get_attr('agent_player_id', indices=[i])[0]
+                    
+                    # 根据智能体角色判断胜负
+                    if winner == agent_plays_as:
                         self.wins += 1
-                    # 如果获胜者是 -1，则记录为失败
-                    elif winner == -1:
+                    elif winner == -agent_plays_as: # 对手获胜
                         self.losses += 1
-                    # 如果获胜者是 0 (或无胜者，视为平局)
-                    else:
+                    elif winner == 0: # 平局
                         self.draws += 1
+                    # else: winner is something unexpected or not set properly (e.g. if game ended due to error)
 
         # 检查是否达到更新频率
         if self.n_calls > 0 and self.n_calls % self.update_freq == 0:
@@ -624,8 +665,10 @@ def make_env(board_size=15, opponent_model=None, seed=0):
     """创建环境的工厂函数，用于多进程向量化环境"""
     def _init():
         env = GomokuGymEnv(board_size=board_size, opponent_model=opponent_model)
+        # GomokuGymEnv.reset() will be called with its own seed logic for player choice
+        # The seed passed here is primarily for SB3's VecEnv wrapper consistency if needed elsewhere
+        env.reset(seed=seed + random.randint(0, 10000)) # Add randomness to seed if sub-envs use it for more than player choice
         env = ActionMasker(env, gomoku_mask_fn)  # 应用动作掩码
-        env.reset(seed=seed)
         return env
     return _init
 
