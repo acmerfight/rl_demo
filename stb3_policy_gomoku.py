@@ -503,7 +503,7 @@ class GomokuGymEnv(gym.Env):
             self.current_state = next_state
             
             # 从智能体角度计算奖励（取反）
-            reward = -opponent_reward if not done else reward
+            reward = -opponent_reward
         
         # 指定截断状态（gymnasium API要求）
         truncated = False
