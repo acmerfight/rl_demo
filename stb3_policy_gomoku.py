@@ -6,6 +6,7 @@ import os
 import gymnasium as gym
 from gymnasium import spaces
 import torch as th
+import torch.nn as nn # ADDED: PyTorch neural network module
 import random
 from datetime import datetime
 from copy import deepcopy
@@ -17,7 +18,79 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.ppo_mask import MaskablePPO
-from stable_baselines3.common.torch_layers import NatureCNN
+from stable_baselines3.common.torch_layers import NatureCNN, BaseFeaturesExtractor # MODIFIED: Added BaseFeaturesExtractor
+
+class CustomCNN(BaseFeaturesExtractor):
+    """
+    专为五子棋设计的自定义卷积神经网络 (CNN) 特征提取器。
+    适用于较小棋盘尺寸 (例如 10x10 或 15x15)，NatureCNN 在这种尺寸下可能会因过度下采样而出错。
+    这个CNN结构比NatureCNN更温和，使用较小的卷积核、步幅和池化层，以避免维度过早减小到无效值。
+
+    网络结构示例 (棋盘尺寸会影响中间及最终展平前的维度):
+    - 输入: (N, n_input_channels, H, W)
+    - Conv1 (32 filters, 3x3 kernel, stride 1, padding 1) -> ReLU -> MaxPool1 (2x2 kernel, stride 2)
+      (例: 10x10 -> 5x5; 15x15 -> 7x7 after pool)
+    - Conv2 (64 filters, 3x3 kernel, stride 1, padding 1) -> ReLU -> MaxPool2 (2x2 kernel, stride 2)
+      (例: 5x5 -> 2x2; 7x7 -> 3x3 after pool)
+    - Conv3 (64 filters, 3x3 kernel, stride 1, padding 1) -> ReLU
+      (例: 2x2 stays 2x2; 3x3 stays 3x3)
+    - Flatten
+    - Linear: (展平后的特征数) -> features_dim
+    - ReLU
+
+    :param observation_space: 观察空间 (Gymnasium Space), 用于确定输入通道数和动态计算展平特征数。
+    :param features_dim: 提取特征的数量 (例如, PPO策略通常使用 256 或 512)。
+    """
+    def __init__(self, observation_space: spaces.Box, features_dim: int = 256):
+        super().__init__(observation_space, features_dim)
+        # observation_space.shape 是 (channels, height, width)
+        n_input_channels = observation_space.shape[0]
+        
+        self.cnn_layers = nn.Sequential(
+            # 第一组卷积和池化
+            nn.Conv2d(n_input_channels, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2), # 例: 10x10 -> 5x5; 15x15 -> 7x7
+
+            # 第二组卷积和池化
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2), # 例: 5x5 -> 2x2; 7x7 -> 3x3
+            
+            # 第三组卷积（通常不池化，以保留更多信息给全连接层）
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            # 对于10x10输入，此时特征图是 (64, 2, 2)
+            # 对于15x15输入，此时特征图是 (64, 3, 3)
+            nn.Flatten(), # 将多维特征图展平为一维向量
+        )
+
+        # 为了使网络结构更具通用性，我们动态计算CNN部分输出的展平后的特征数量。
+        # 这需要一个虚拟输入通过CNN层来确定其输出形状。
+        with th.no_grad(): # 禁用梯度计算，因为这只是为了获取形状
+            # observation_space.sample() 返回 numpy 数组, [None] 增加批次维度
+            # th.as_tensor 转换为 PyTorch 张量，并确保类型为 float
+            dummy_input_np = observation_space.sample()[None] 
+            dummy_input_th = th.as_tensor(dummy_input_np).float()
+            n_flattened_features = self.cnn_layers(dummy_input_th).shape[1]
+
+        # 全连接层 (Linear Layer)，将CNN提取的特征映射到最终的 features_dim
+        self.linear_layers = nn.Sequential(
+            nn.Linear(n_flattened_features, features_dim), # 输入为展平后的特征数
+            nn.ReLU(), # 通常在特征提取的最后也加一个激活函数
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        """
+        定义数据通过网络的前向传播路径。
+
+        :param observations: 批量的观察数据, 形状为 (N, C, H, W)，N是批量大小。
+        :return: 提取的特征向量, 形状为 (N, features_dim)。
+        """
+        # 首先通过卷积层和池化层提取空间特征
+        cnn_output = self.cnn_layers(observations)
+        # 然后通过全连接层得到最终的特征向量
+        return self.linear_layers(cnn_output)
 
 
 class GomokuEnv:
@@ -759,7 +832,7 @@ def train_self_play_gomoku(
         
     # 设置模型参数 - 使用 CNN
     policy_kwargs = dict(
-        features_extractor_class=NatureCNN,           # 使用 NatureCNN 作为特征提取器
+        features_extractor_class=CustomCNN,           # 使用 CustomCNN 作为特征提取器
         features_extractor_kwargs=dict(features_dim=256), # CNN 输出 256 维特征
         activation_fn=th.nn.ReLU,                    # 激活函数
         net_arch=dict(pi=[64], vf=[64])              # 特征提取后，策略和价值网络各有一个64单元的隐藏层
