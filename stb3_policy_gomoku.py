@@ -1021,105 +1021,105 @@ def train_self_play_gomoku(
 
 def play_against_model(model_path, board_size=15, render=True):
     """
-    让人类玩家与模型对战，通过点击棋盘落子
+    Let a human player play against the model by clicking on the board
     
-    参数:
-    - model_path: 模型路径
-    - board_size: 棋盘大小
-    - render: 是否渲染游戏
+    Parameters:
+    - model_path: Model path
+    - board_size: Board size
+    - render: Whether to render the game
     """
-    # 加载模型
+    # Load model
     model = MaskablePPO.load(model_path)
     
-    # 创建环境
+    # Create environment
     env = GomokuGymEnv(board_size=board_size)
     env = ActionMasker(env, gomoku_mask_fn)
     
     state, _ = env.reset()
     done = False
     
-    # 创建图形和轴以进行交互式绘图
+    # Create figure and axes for interactive plotting
     fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111)
     env.render_ax = ax
     
-    # 用于存储用户点击的位置
+    # For storing user click position
     click_coords = [None]
     
     def on_click(event):
-        """处理鼠标点击事件"""
+        """Handle mouse click events"""
         if event.xdata is not None and event.ydata is not None:
-            # 将浮点坐标转换为整数棋盘坐标
+            # Convert float coordinates to integer board coordinates
             x = int(round(event.xdata))
             y = int(round(event.ydata))
             
-            # 确保坐标在棋盘范围内
+            # Ensure coordinates are within board range
             if 0 <= x < board_size and 0 <= y < board_size:
                 action = x * board_size + y
                 valid_moves = env.env.get_valid_moves()
                 
                 if action in valid_moves:
-                    # 存储有效点击
+                    # Store valid click
                     click_coords[0] = action
-                    plt.close(fig)  # 关闭当前图形以继续游戏流程
+                    plt.close(fig)  # Close current figure to continue game flow
                 else:
-                    plt.title("无效落子位置，请重试", color='red')
+                    plt.title("Invalid move, please try again", color='red')
                     fig.canvas.draw_idle()
     
-    print("开始游戏！您执黑先行。点击棋盘落子。")
+    print("Game started! You play as Black. Click on the board to place your stone.")
     
     while not done:
-        if env.env.current_player == 1:  # 人类玩家回合 (黑棋)
-            # 显示棋盘
+        if env.env.env.current_player == 1:  # Human player's turn (Black)
+            # Display board
             if render:
-                env.render_ax = env.env.render(ax=ax)
-                ax.set_title("轮到您落子 (黑棋)", fontsize=14)
+                env.render_ax = env.env.env.render(ax=ax)
+                ax.set_title("Your turn (Black)", fontsize=14)
                 
-                # 连接点击事件
+                # Connect click event
                 cid = fig.canvas.mpl_connect('button_press_event', on_click)
                 
-                # 显示图形并等待点击
+                # Show figure and wait for click
                 plt.show()
                 
-                # 断开事件连接
+                # Disconnect event
                 fig.canvas.mpl_disconnect(cid)
                 
-                # 获取用户动作
+                # Get user action
                 action = click_coords[0]
-                click_coords[0] = None  # 重置点击坐标
+                click_coords[0] = None  # Reset click coordinates
                 
-                # 创建新图形用于显示
+                # Create new figure for display
                 fig = plt.figure(figsize=(8, 8))
                 ax = fig.add_subplot(111)
                 env.render_ax = ax
         
-        else:  # 模型回合 (白棋)
-            # 获取动作掩码
-            action_mask = env.action_mask()
+        else:  # Model's turn (White)
+            # Get action mask
+            action_mask = env.env.action_mask()
             
-            # 模型选择动作
+            # Model selects action
             action, _ = model.predict(state, action_masks=action_mask, deterministic=True)
             
-            # 显示模型动作
+            # Display model action
             x, y = action // board_size, action % board_size
-            print(f"AI落子位置: ({x}, {y})")
+            print(f"AI placed stone at: ({x}, {y})")
         
-        # 执行动作
+        # Execute action
         state, reward, done, _, info = env.step(action)
         
-        # 显示最新棋盘
-        if render and not (env.env.current_player == 1 and not done):
-            env.render_ax = env.env.render(ax=ax)
-            plt.pause(0.5)  # 给玩家一点时间查看AI的落子
+        # Display latest board
+        if render and not (env.env.env.current_player == 1 and not done):
+            env.render_ax = env.env.env.render(ax=ax)
+            plt.pause(0.5)  # Give player a moment to see AI's move
         
-        # 显示游戏结果
+        # Display game result
         if done:
-            env.render_ax = env.env.render(ax=ax)
+            env.render_ax = env.env.env.render(ax=ax)
             if 'winner' in info and info['winner'] != 0:
-                winner = "黑棋(玩家)" if info['winner'] == 1 else "白棋(AI)"
-                ax.set_title(f"游戏结束，{winner}胜利！", fontsize=14, color='blue')
+                winner = "Black (Player)" if info['winner'] == 1 else "White (AI)"
+                ax.set_title(f"Game over, {winner} wins!", fontsize=14, color='blue')
             else:
-                ax.set_title("游戏结束，平局！", fontsize=14, color='green')
+                ax.set_title("Game over, it's a draw!", fontsize=14, color='green')
             plt.show()
     
     env.close()
@@ -1127,25 +1127,25 @@ def play_against_model(model_path, board_size=15, render=True):
 
 if __name__ == "__main__":
     # 训练模型
-    trained_model = train_self_play_gomoku(
-        board_size=10,  # 使用较小棋盘加速训练
-        total_timesteps=5000 * 10000,  # 可根据需要调整
-        n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
-        save_path="models/gomoku_self_play",
-        model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
-        model_update_freq=20000,  # 模型池更新频率
-        opponent_update_freq=5000,  # 对手更新频率
-        save_freq=10000,  # 保存模型频率
-        learning_rate=3e-4,
-        gamma=0.999,
-        n_steps=256,
-        batch_size=128,
-        n_epochs=10,
-        seed=0,
-        initial_exploration_steps=50000,
-        eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
-        n_eval_episodes_benchmark=5, # 基准评估局数
-    )
+    # trained_model = train_self_play_gomoku(
+    #     board_size=10,  # 使用较小棋盘加速训练
+    #     total_timesteps=5000 * 10000,  # 可根据需要调整
+    #     n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
+    #     save_path="models/gomoku_self_play",
+    #     model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
+    #     model_update_freq=20000,  # 模型池更新频率
+    #     opponent_update_freq=5000,  # 对手更新频率
+    #     save_freq=10000,  # 保存模型频率
+    #     learning_rate=3e-4,
+    #     gamma=0.999,
+    #     n_steps=256,
+    #     batch_size=128,
+    #     n_epochs=10,
+    #     seed=0,
+    #     initial_exploration_steps=50000,
+    #     eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
+    #     n_eval_episodes_benchmark=5, # 基准评估局数
+    # )
     
     # 可选：与训练好的模型对战
-    # play_against_model("models/gomoku_self_play_final", board_size=10)
+    play_against_model("models/gomoku_self_play_330000_steps.zip", board_size=10)
