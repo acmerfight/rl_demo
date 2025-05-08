@@ -794,7 +794,7 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
 def train_self_play_gomoku(
     board_size=10,  # 使用10x10的棋盘训练更快
     total_timesteps=1_000_000,
-    n_envs=max(1, os.cpu_count() // 2 if os.cpu_count() else 1), # Default n_envs based on CPU count
+    n_envs=max(1, os.cpu_count() if os.cpu_count() else 1), # Default n_envs based on CPU count
     save_path="models/gomoku_self_play",
     model_pool_size=100,  # 内存中保存的历史模型数量
     model_update_freq=10000,  # 更新模型池的频率
