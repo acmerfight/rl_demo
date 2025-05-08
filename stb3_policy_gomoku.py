@@ -1176,7 +1176,7 @@ def play_against_model(model_path, board_size=15, render=True):
 
 if __name__ == "__main__":
     # 训练模型
-    total_timesteps = 2000 * 10000
+    TOTAL_TIMESTEPS = 2000 * 10000
     MODEL_UPDATE_FREQ = 20000
     
     # 定义学习率调度
@@ -1187,7 +1187,7 @@ if __name__ == "__main__":
     
     trained_model = train_self_play_gomoku(
         board_size=10,  # 使用较小棋盘加速训练
-        total_timesteps=total_timesteps,
+        total_timesteps=TOTAL_TIMESTEPS,
         n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 保存 50 个历史模型，用来更新对手
@@ -1201,7 +1201,7 @@ if __name__ == "__main__":
         batch_size=256,
         n_epochs=5,
         seed=0,
-        initial_exploration_steps=total_timesteps * 0.05,
+        initial_exploration_steps=TOTAL_TIMESTEPS * 0.01,
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
         n_eval_episodes_benchmark=5, # 基准评估局数
     )
