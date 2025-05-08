@@ -1198,7 +1198,7 @@ if __name__ == "__main__":
         gamma=0.999,
         n_steps=1024,
         batch_size=512,
-        n_epochs=10,
+        n_epochs=5,
         seed=0,
         initial_exploration_steps=total_timesteps * 0.05,
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
