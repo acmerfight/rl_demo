@@ -977,7 +977,7 @@ def train_self_play_gomoku(
         eval_freq=eval_freq_benchmark,
         n_eval_episodes=n_eval_episodes_benchmark,
         board_size=board_size, # Pass board_size to the callback
-        verbose=1
+        verbose=0
     )
 
     callbacks = [model_pool_callback, checkpoint_callback, benchmark_callback]
@@ -1031,7 +1031,7 @@ def play_against_model(model_path, board_size=15, render=True):
     # Load model
     model = MaskablePPO.load(model_path)
     
-    # Create environment
+    # Create environment - 不传入opponent_model以避免自动AI对战
     env = GomokuGymEnv(board_size=board_size)
     env = ActionMasker(env, gomoku_mask_fn)
     
@@ -1056,7 +1056,7 @@ def play_against_model(model_path, board_size=15, render=True):
             # Ensure coordinates are within board range
             if 0 <= x < board_size and 0 <= y < board_size:
                 action = x * board_size + y
-                valid_moves = env.env.get_valid_moves()
+                valid_moves = env.env.env.get_valid_moves()
                 
                 if action in valid_moves:
                     # Store valid click
@@ -1127,25 +1127,25 @@ def play_against_model(model_path, board_size=15, render=True):
 
 if __name__ == "__main__":
     # 训练模型
-    # trained_model = train_self_play_gomoku(
-    #     board_size=10,  # 使用较小棋盘加速训练
-    #     total_timesteps=5000 * 10000,  # 可根据需要调整
-    #     n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
-    #     save_path="models/gomoku_self_play",
-    #     model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
-    #     model_update_freq=20000,  # 模型池更新频率
-    #     opponent_update_freq=5000,  # 对手更新频率
-    #     save_freq=10000,  # 保存模型频率
-    #     learning_rate=3e-4,
-    #     gamma=0.999,
-    #     n_steps=256,
-    #     batch_size=128,
-    #     n_epochs=10,
-    #     seed=0,
-    #     initial_exploration_steps=50000,
-    #     eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
-    #     n_eval_episodes_benchmark=5, # 基准评估局数
-    # )
+    trained_model = train_self_play_gomoku(
+        board_size=10,  # 使用较小棋盘加速训练
+        total_timesteps=500 * 10000,  # 可根据需要调整
+        n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
+        save_path="models/gomoku_self_play",
+        model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
+        model_update_freq=20000,  # 模型池更新频率
+        opponent_update_freq=5000,  # 对手更新频率
+        save_freq=10000,  # 保存模型频率
+        learning_rate=3e-4,
+        gamma=0.999,
+        n_steps=256,
+        batch_size=128,
+        n_epochs=10,
+        seed=0,
+        initial_exploration_steps=50000,
+        eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
+        n_eval_episodes_benchmark=5, # 基准评估局数
+    )
     
     # 可选：与训练好的模型对战
-    play_against_model("models/gomoku_self_play_330000_steps.zip", board_size=10)
+    play_against_model("models/gomoku_self_play_final.zip", board_size=10)
