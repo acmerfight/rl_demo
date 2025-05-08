@@ -888,7 +888,8 @@ def train_self_play_gomoku(
     seed,
     initial_exploration_steps,  # 初始探索步数，使用随机对手
     eval_freq_benchmark, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
-    n_eval_episodes_benchmark  # 基准评估局数
+    n_eval_episodes_benchmark,  # 基准评估局数
+    log_interval  # 日志记录频率
 ):
     """
     使用真正的自我博弈和Maskable PPO训练五子棋智能体
@@ -993,7 +994,8 @@ def train_self_play_gomoku(
             total_timesteps=steps_to_train,
             callback=callbacks,
             tb_log_name="gomoku_self_play",
-            reset_num_timesteps=False
+            reset_num_timesteps=False,
+            log_interval=log_interval,
         )
         
         # 如果完成了初始探索阶段，确保添加一个模型到模型池
@@ -1145,7 +1147,8 @@ if __name__ == "__main__":
         seed=0,
         initial_exploration_steps=50000,
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
-        n_eval_episodes_benchmark=5 # 基准评估局数
+        n_eval_episodes_benchmark=5, # 基准评估局数
+        log_interval=10 # 日志记录频率
     )
     
     # 可选：与训练好的模型对战
