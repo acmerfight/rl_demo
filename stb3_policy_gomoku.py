@@ -787,10 +787,13 @@ class BenchmarkCallback(BaseCallback):
             losses = 0
             draws = 0
             
+            print("start Running benchmark 00 ")
             if self.verbose > 0:
                 print(f"\nRunning benchmark evaluation against random opponent for {self.n_eval_episodes} episodes...")
+            print("start Running benchmark 01 ")
 
             for episode in range(self.n_eval_episodes):
+                print("start Running benchmark 02 ")
                 obs = self.eval_env.reset()
                 # agent_player_id is set within GomokuGymEnv's reset. Fetch it for the current episode.
                 current_agent_player_id = self.eval_env.get_attr("agent_player_id")[0]
@@ -1134,7 +1137,7 @@ if __name__ == "__main__":
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 在内存中保存100个历史模型
         model_update_freq=20000,  # 模型池更新频率
-        eval_freq_benchmark=25000, # 基准评估频率
+        eval_freq_benchmark=25000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
         n_eval_episodes_benchmark=10 # 基准评估局数
     )
     
