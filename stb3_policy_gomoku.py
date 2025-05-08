@@ -755,6 +755,86 @@ class ModelPoolUpdateCallback(BaseCallback):
         return True
 
 
+class BenchmarkCallback(BaseCallback):
+    """
+    Callback for periodically evaluating the agent against a fixed random opponent.
+    """
+    def __init__(self, eval_freq: int, n_eval_episodes: int, board_size: int, verbose: int = 1):
+        super().__init__(verbose)
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.board_size = board_size
+        self.eval_env = None
+
+    def _init_callback(self) -> None:
+        """Initialize the evaluation environment."""
+        # Create a single environment for evaluation.
+        # GomokuGymEnv defaults to a random opponent if opponent_model is None.
+        # The make_env factory handles ActionMasker wrapping.
+        # Use a distinct seed for the benchmark environment if desired, or random.
+        env_fn = make_env(board_size=self.board_size, opponent_model=None, seed=np.random.randint(0, 100000))
+        self.eval_env = DummyVecEnv([env_fn])
+
+        if self.verbose > 0:
+            print(f"BenchmarkCallback: Evaluation environment for random opponent initialized (Board: {self.board_size}x{self.board_size}).")
+
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls > 0 and self.n_calls % self.eval_freq == 0:
+            if self.eval_env is None: # Lazy initialization
+                 self._init_callback()
+
+            wins = 0
+            losses = 0
+            draws = 0
+            
+            if self.verbose > 0:
+                print(f"\nRunning benchmark evaluation against random opponent for {self.n_eval_episodes} episodes...")
+
+            for episode in range(self.n_eval_episodes):
+                obs = self.eval_env.reset()
+                # agent_player_id is set within GomokuGymEnv's reset. Fetch it for the current episode.
+                current_agent_player_id = self.eval_env.get_attr("agent_player_id")[0]
+                done_episode = False
+                
+                while not done_episode:
+                    # Get action mask from the wrapped environment
+                    action_masks = self.eval_env.env_method("action_mask")[0]
+                    action, _ = self.model.predict(obs, action_masks=action_masks, deterministic=True)
+                    obs, _, dones_vec, infos_vec = self.eval_env.step(action) # dones_vec is a list/array
+                    
+                    done_episode = dones_vec[0]
+                    
+                    if done_episode:
+                        winner = infos_vec[0]['winner']
+                        if winner == current_agent_player_id:
+                            wins += 1
+                        elif winner == -current_agent_player_id: # Opponent won
+                            losses += 1
+                        else: # Draw
+                            draws += 1
+            
+            total_eval_games = wins + losses + draws
+            win_rate_vs_random = wins / total_eval_games if total_eval_games > 0 else 0.0
+            
+            self.logger.record("eval/win_rate_vs_random", win_rate_vs_random)
+            self.logger.record("eval/wins_vs_random", wins)
+            self.logger.record("eval/losses_vs_random", losses)
+            self.logger.record("eval/draws_vs_random", draws)
+            self.logger.record("eval/total_eval_games_vs_random", total_eval_games)
+            
+            if self.verbose > 0:
+                print(f"Benchmark evaluation (vs Random) complete: Win rate = {win_rate_vs_random:.3f} ({wins}W/{losses}L/{draws}D)")
+        
+        return True
+
+    def _on_training_end(self) -> None:
+        """Close the evaluation environment when training ends."""
+        if self.eval_env is not None:
+            self.eval_env.close()
+            if self.verbose > 0:
+                print("BenchmarkCallback: Evaluation environment (vs Random) closed.")
+
+
 def make_env(board_size=15, opponent_model=None, seed=0):
     """创建环境的工厂函数，用于多进程向量化环境"""
     def _init():
@@ -806,7 +886,9 @@ def train_self_play_gomoku(
     batch_size=128,
     n_epochs=10,  # PPO epochs
     seed=0,
-    initial_exploration_steps=50000  # 初始探索步数，使用随机对手
+    initial_exploration_steps=50000,  # 初始探索步数，使用随机对手
+    eval_freq_benchmark: int = 50000, # NEW: Frequency for benchmark evaluation
+    n_eval_episodes_benchmark: int = 30  # NEW: Number of episodes for benchmark evaluation
 ):
     """
     使用真正的自我博弈和Maskable PPO训练五子棋智能体
@@ -828,6 +910,8 @@ def train_self_play_gomoku(
     - n_epochs: 每次更新的epoch数
     - seed: 随机种子
     - initial_exploration_steps: 初始探索步数，使用随机对手
+    - eval_freq_benchmark: 新参数，用于benchmark
+    - n_eval_episodes_benchmark: 新参数，用于benchmark
     """
     # 设置随机种子
     set_random_seed(seed)
@@ -890,6 +974,15 @@ def train_self_play_gomoku(
         save_vecnormalize=False,
     )
     
+    benchmark_callback = BenchmarkCallback(
+        eval_freq=eval_freq_benchmark,
+        n_eval_episodes=n_eval_episodes_benchmark,
+        board_size=board_size, # Pass board_size to the callback
+        verbose=1
+    )
+
+    callbacks = [model_pool_callback, checkpoint_callback, benchmark_callback]
+
     # 训练循环
     remaining_timesteps = total_timesteps
     while remaining_timesteps > 0:
@@ -898,7 +991,7 @@ def train_self_play_gomoku(
         
         model.learn(
             total_timesteps=steps_to_train,
-            callback=[model_pool_callback, checkpoint_callback],
+            callback=callbacks,
             tb_log_name="gomoku_self_play",
             reset_num_timesteps=False
         )
@@ -1041,6 +1134,8 @@ if __name__ == "__main__":
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 在内存中保存100个历史模型
         model_update_freq=20000,  # 模型池更新频率
+        eval_freq_benchmark=25000, # Example: Evaluate every 25k agent steps
+        n_eval_episodes_benchmark=50 # Example: Play 50 games for benchmark
     )
     
     # 可选：与训练好的模型对战
