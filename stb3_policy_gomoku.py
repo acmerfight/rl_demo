@@ -1177,6 +1177,7 @@ def play_against_model(model_path, board_size=15, render=True):
 if __name__ == "__main__":
     # 训练模型
     total_timesteps = 2000 * 10000
+    MODEL_UPDATE_FREQ = 20000
     
     # 定义学习率调度
     lr_schedule = cosine_decay_lr(initial_lr=3e-4, min_lr=1e-6)
@@ -1190,14 +1191,14 @@ if __name__ == "__main__":
         n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 保存 50 个历史模型，用来更新对手
-        model_update_freq=20000,  # 模型池更新频率
-        opponent_update_freq=5000,  # 对手更新频率
+        model_update_freq=MODEL_UPDATE_FREQ,
+        opponent_update_freq=MODEL_UPDATE_FREQ * 2,  # 对手更新频率
         save_freq=10000,  # 保存模型频率
         learning_rate_schedule=lr_schedule,
         clip_range_schedule=clip_schedule,
         gamma=0.999,
-        n_steps=1024,
-        batch_size=512,
+        n_steps=512,
+        batch_size=256,
         n_epochs=5,
         seed=0,
         initial_exploration_steps=total_timesteps * 0.05,
