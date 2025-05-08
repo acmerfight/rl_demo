@@ -351,10 +351,10 @@ class GomokuEnv:
 StableBaselinesModel = Any
 
 class ModelInfo(NamedTuple):
-    """存储模型及其元数据的结构体"""
-    model: StableBaselinesModel
+    """存储模型路径及其元数据的结构体"""
+    model: str  # 存储模型的文件路径而不是模型对象
     name: str
-    iteration: Any # 迭代可以是数字或字符串，如 "initial"
+    iteration: Any
     win_rate: Optional[float]
 
 class ModelPoolManager:
@@ -376,80 +376,88 @@ class ModelPoolManager:
     def add_model(self, model: StableBaselinesModel, iteration: Any, win_rate: float) -> str:
         """
         添加新模型到模型池。如果池已满，则移除胜率最低的模型。
-
+        
         参数:
-        - model: 要添加的模型对象 (将进行深拷贝)
+        - model: 要添加的模型对象 (将使用save/load代替深拷贝)
         - iteration: 当前迭代标识
         - win_rate: 模型的胜率
-
+        
         返回:
         - 生成的模型名称
         """
-        # 生成唯一的模型名称
+        # 生成唯一的模型名称和临时文件路径
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_name = f"model_iter_{iteration}_{timestamp}"
-
-        # 深拷贝模型以存储其状态快照
-        model_copy = deepcopy(model)
-
-        # 创建模型信息对象
-        new_model_info = ModelInfo(model=model_copy, name=model_name, iteration=iteration, win_rate=win_rate)
-
+        temp_path = os.path.join("temp_models", f"{model_name}.zip")
+        
+        # 确保临时目录存在
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+        
+        # 保存模型到临时文件
+        model.save(temp_path)
+        
+        # 创建模型信息对象，存储路径而不是模型对象
+        new_model_info = ModelInfo(model=temp_path, name=model_name, iteration=iteration, win_rate=win_rate)
+        
         # 添加到内存池
         self.models.append(new_model_info)
         print(f"已将模型添加到内存模型池: {new_model_info.name}, Win Rate: {new_model_info.win_rate}")
-
+        
         # 如果模型数量超过上限，移除胜率最低的模型
         self._evict_lowest_win_rate_model_if_needed()
-
+        
         return model_name
 
     def _evict_lowest_win_rate_model_if_needed(self):
         """如果模型池已满，则查找并移除胜率最低的模型。"""
         if len(self.models) > self.max_models:
             # 使用 min 和 lambda 函数简洁地查找胜率最低的模型及其索引
-            # 将 None 胜率视为负无穷大，以便优先移除
             min_index, _ = min(
                 enumerate(self.models),
                 key=lambda item: item[1].win_rate 
             )
-            # 移除模型
+            # 移除模型信息
             removed_info = self.models.pop(min_index)
+            
+            # 删除对应的模型文件
+            try:
+                if os.path.exists(removed_info.model):
+                    os.remove(removed_info.model)
+            except Exception as e:
+                print(f"删除模型文件时发生错误: {e}")
+            
             print(f"模型池已满，已移除胜率最低的模型: {removed_info.name} (Win Rate: {removed_info.win_rate})")
 
     def sample_opponent_model(self) -> StableBaselinesModel:
-        """
-        从模型池中根据胜率加权随机选择一个对手模型。
-        胜率越高的模型被选中的概率越大。
-
-        返回:
-        - 选中的模型对象，如果池为空则返回 None
-        """
+        """从模型池中根据胜率加权随机选择一个对手模型。"""
         if not self.models:
             print("模型池为空，无法采样对手。")
             return None
 
         # 计算权重：胜率 + 基础权重 (epsilon)
-        # 基础权重确保所有模型（包括胜率为0或None的模型）都有机会被选中
         base_weight = 0.2
         weights = [info.win_rate + base_weight for info in self.models]
         # 执行加权随机选择
         chosen_index = random.choices(range(len(self.models)), weights=weights, k=1)[0]
-        # 获取选中的模型及其信息用于日志记录
+        # 获取选中的模型信息
         chosen_model_info = self.models[chosen_index]
-        sampled_model = chosen_model_info.model
+        model_path = chosen_model_info.model
         model_name = chosen_model_info.name
-        chosen_win_rate = chosen_model_info.win_rate # 用于日志的原始胜率
+        chosen_win_rate = chosen_model_info.win_rate
 
-        print(f"从内存池中根据胜率加权选择对手模型: {model_name} (Win Rate: {chosen_win_rate}, Weight: {weights[chosen_index]:.3f})")
+        # 从临时文件加载模型
+        sampled_model = MaskablePPO.load(model_path)
+        
+        print(f"从模型池中选择对手模型: {model_name} (Win Rate: {chosen_win_rate})")
         return sampled_model
 
     def get_latest_model(self) -> Optional[StableBaselinesModel]:
         """获取最新添加的模型对象"""
         if not self.models:
             return None
-        # 最新的模型总是在列表的末尾
-        return self.models[-1].model
+        # 从最新模型的路径加载模型
+        latest_model_path = self.models[-1].model
+        return MaskablePPO.load(latest_model_path)
 
     def get_model_count(self) -> int:
         """获取模型池中的模型数量"""
