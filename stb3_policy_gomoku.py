@@ -1133,7 +1133,7 @@ if __name__ == "__main__":
         board_size=10,  # 使用较小棋盘加速训练
         total_timesteps=5000 * 10000,  # 可根据需要调整
         save_path="models/gomoku_self_play",
-        model_pool_size=100,  # 在内存中保存100个历史模型
+        model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
         model_update_freq=20000,  # 模型池更新频率
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
         n_eval_episodes_benchmark=5 # 基准评估局数
