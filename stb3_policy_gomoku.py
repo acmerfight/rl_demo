@@ -428,28 +428,32 @@ class ModelPoolManager:
             
             print(f"模型池已满，已移除胜率最低的模型: {removed_info.name} (Win Rate: {removed_info.win_rate})")
 
-    def sample_opponent_model(self) -> StableBaselinesModel:
-        """从模型池中根据胜率加权随机选择一个对手模型。"""
+    def sample_opponent_model(self) -> str:
+        """
+        从模型池中根据胜率加权随机选择一个对手模型的路径。
+        胜率越高的模型被选中的概率越大。
+
+        返回:
+        - 选中的模型文件路径，如果池为空则返回 None
+        """
         if not self.models:
             print("模型池为空，无法采样对手。")
             return None
 
         # 计算权重：胜率 + 基础权重 (epsilon)
+        # 基础权重确保所有模型（包括胜率为0或None的模型）都有机会被选中
         base_weight = 0.2
         weights = [info.win_rate + base_weight for info in self.models]
         # 执行加权随机选择
         chosen_index = random.choices(range(len(self.models)), weights=weights, k=1)[0]
-        # 获取选中的模型信息
+        # 获取选中的模型及其信息用于日志记录
         chosen_model_info = self.models[chosen_index]
-        model_path = chosen_model_info.model
+        model_path = chosen_model_info.model # Path to the model
         model_name = chosen_model_info.name
-        chosen_win_rate = chosen_model_info.win_rate
+        chosen_win_rate = chosen_model_info.win_rate # 用于日志的原始胜率
 
-        # 从临时文件加载模型
-        sampled_model = MaskablePPO.load(model_path)
-        
-        print(f"从模型池中选择对手模型: {model_name} (Win Rate: {chosen_win_rate})")
-        return sampled_model
+        print(f"从内存池中根据胜率加权选择对手模型路径: {model_name} (Path: {model_path}, Win Rate: {chosen_win_rate}, Weight: {weights[chosen_index]:.3f})")
+        return model_path # MODIFIED: Return the path
 
     def get_latest_model(self) -> Optional[StableBaselinesModel]:
         """获取最新添加的模型对象"""
@@ -506,17 +510,26 @@ class GomokuGymEnv(gym.Env):
         self.render_ax = None
         self.agent_player_id = 1 # 智能体扮演的角色 (1 黑棋, -1 白棋), 会在reset时随机化
     
-    def set_opponent_model(self, model):
+    def set_opponent_model(self, model_path: str):
         """
         设置对手模型
         
         参数:
-        - model: 模型对象
+        - model_path: 模型文件路径 (字符串)
         """
-        self.opponent_model = model
-        self.use_random_opponent = False if model is not None else True
-        if model is not None:
-            print(f"已更新对手模型")
+        if model_path and os.path.exists(model_path):
+            try:
+                self.opponent_model = MaskablePPO.load(model_path)
+                self.use_random_opponent = False
+                print(f"环境 {os.getpid()} 已从路径 {model_path} 更新对手模型")
+            except Exception as e:
+                print(f"环境 {os.getpid()} 从路径 {model_path} 加载模型失败: {e}. 将使用随机对手。")
+                self.opponent_model = None
+                self.use_random_opponent = True
+        else:
+            print(f"环境 {os.getpid()} 收到无效模型路径 '{model_path}' 或文件不存在。将使用随机对手。")
+            self.opponent_model = None
+            self.use_random_opponent = True
     
     def _random_opponent_action(self):
         """随机对手策略"""
@@ -771,10 +784,11 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
     for i in range(vec_env.num_envs):
         # 随机决定是否更新
         if random.random() < update_prob:
-            # 从模型池中采样对手
-            opponent_model = model_pool.sample_opponent_model()
-            # 使用env_method调用子进程中的set_opponent_model方法
-            vec_env.env_method("set_opponent_model", opponent_model, indices=[i])
+            # 从模型池中采样对手模型的路径
+            opponent_model_path = model_pool.sample_opponent_model()
+            if opponent_model_path: # 确保路径有效
+                # 使用env_method调用子进程中的set_opponent_model方法，传递路径
+                vec_env.env_method("set_opponent_model", opponent_model_path, indices=[i])
 
 
 def train_self_play_gomoku(
