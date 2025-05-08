@@ -1011,7 +1011,7 @@ def train_self_play_gomoku(
     model_pool_callback = ModelPoolUpdateCallback(
         model_pool=model_pool,
         update_freq=model_update_freq,
-        verbose=1
+        verbose=2
     )
     
     checkpoint_callback = CheckpointCallback(
@@ -1026,7 +1026,7 @@ def train_self_play_gomoku(
         eval_freq=eval_freq_benchmark,
         n_eval_episodes=n_eval_episodes_benchmark,
         board_size=board_size, # Pass board_size to the callback
-        verbose=0
+        verbose=2
     )
 
     callbacks = [model_pool_callback, checkpoint_callback, benchmark_callback]
