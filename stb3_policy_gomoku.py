@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from typing import Dict, Tuple, Optional, Any, List, NamedTuple
+from typing import Dict, Tuple, Optional, Any, List, NamedTuple, Callable
 import os
 import gymnasium as gym
 from gymnasium import spaces
@@ -9,6 +9,7 @@ import torch as th
 import torch.nn as nn # ADDED: PyTorch neural network module
 import random
 from datetime import datetime
+import math # ADDED: math for cosine schedule
 
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from stable_baselines3.common.utils import set_random_seed
@@ -348,6 +349,51 @@ class GomokuEnv:
 
 # 假设模型类型，如果知道具体类型可以替换 Any
 StableBaselinesModel = Any
+
+def cosine_decay_lr(initial_lr: float, min_lr: float = 1e-7) -> Callable[[float], float]:
+    """
+    创建一个余弦衰减学习率调度函数。
+
+    参数:
+    - initial_lr: 初始最大学习率。
+    - min_lr: 最小学习率。
+
+    返回:
+    - 一个函数，该函数接受 'progress_remaining' (从1.0到0.0)作为输入，
+      并返回当前的学习率。
+    """
+    def schedule(progress_remaining: float) -> float:
+        # progress_remaining 从 1.0 (开始) 减到 0.0 (结束)
+        # 我们需要的是从 0.0 (开始) 到 1.0 (结束) 的进度
+        current_progress = 1.0 - progress_remaining
+        return min_lr + 0.5 * (initial_lr - min_lr) * (1 + math.cos(math.pi * current_progress))
+    return schedule
+
+def cosine_decay_clip_range(initial_clip: float, final_clip: float) -> Callable[[float], float]:
+    """
+    创建一个余弦衰减学习率调度函数 PPO 的 clip_range。
+
+    参数:
+    - initial_clip: 初始 (最大) clip_range。
+    - final_clip: 最终 (最小) clip_range。
+
+    返回:
+    - 一个函数，该函数接受 'progress_remaining' (从1.0到0.0)作为输入，
+      并返回当前的 clip_range。
+    """
+    # 确保 initial_clip >= final_clip，因为我们是从大到小衰减
+    if final_clip > initial_clip:
+        raise ValueError("final_clip should be less than or equal to initial_clip for decay.")
+
+    def schedule(progress_remaining: float) -> float:
+        # progress_remaining 从 1.0 (开始) 减到 0.0 (结束)
+        # 我们需要的是从 0.0 (开始) 到 1.0 (结束) 的进度
+        current_progress = 1.0 - progress_remaining
+        # 余弦调度：从 initial_clip 线性插值到 final_clip
+        # f(x) = final + 0.5 * (initial - final) * (1 + cos(pi * x))
+        # 这里 x 是 current_progress, initial 是 initial_clip, final 是 final_clip
+        return final_clip + 0.5 * (initial_clip - final_clip) * (1 + math.cos(math.pi * current_progress))
+    return schedule
 
 class ModelInfo(NamedTuple):
     """存储模型路径及其元数据的结构体"""
@@ -879,7 +925,8 @@ def train_self_play_gomoku(
     model_update_freq,
     opponent_update_freq,  # 更新对手的频率
     save_freq,
-    learning_rate,
+    learning_rate_schedule: Callable[[float], float],
+    clip_range_schedule: Callable[[float], float],
     gamma,  # 折扣因子
     n_steps,
     batch_size,
@@ -902,7 +949,8 @@ def train_self_play_gomoku(
     - model_update_freq: 更新模型池的频率（步数）
     - opponent_update_freq: 更新对手的频率（步数）
     - save_freq: 模型保存频率
-    - learning_rate: 学习率
+    - learning_rate_schedule: 学习率调度函数
+    - clip_range_schedule: PPO裁剪范围调度函数
     - gamma: 折扣因子
     - n_steps: 每次更新的步数
     - batch_size: 批次大小
@@ -947,7 +995,8 @@ def train_self_play_gomoku(
     model = MaskablePPO(
         MaskableActorCriticPolicy,
         vec_env,
-        learning_rate=learning_rate,
+        learning_rate=learning_rate_schedule,
+        clip_range=clip_range_schedule,
         gamma=gamma,
         n_steps=n_steps,
         batch_size=batch_size,
@@ -1127,22 +1176,31 @@ def play_against_model(model_path, board_size=15, render=True):
 
 if __name__ == "__main__":
     # 训练模型
+    total_timesteps = 2000 * 10000
+    
+    # 定义学习率调度
+    lr_schedule = cosine_decay_lr(initial_lr=3e-4, min_lr=1e-6)
+    
+    # 定义PPO clip_range调度
+    clip_schedule = cosine_decay_clip_range(initial_clip=0.3, final_clip=0.05)
+    
     trained_model = train_self_play_gomoku(
         board_size=10,  # 使用较小棋盘加速训练
-        total_timesteps=500 * 10000,  # 可根据需要调整
+        total_timesteps=total_timesteps,
         n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
         save_path="models/gomoku_self_play",
-        model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
+        model_pool_size=100,  # 保存 50 个历史模型，用来更新对手
         model_update_freq=20000,  # 模型池更新频率
         opponent_update_freq=5000,  # 对手更新频率
         save_freq=10000,  # 保存模型频率
-        learning_rate=3e-4,
+        learning_rate_schedule=lr_schedule,
+        clip_range_schedule=clip_schedule,
         gamma=0.999,
-        n_steps=256,
-        batch_size=128,
+        n_steps=1024,
+        batch_size=512,
         n_epochs=10,
         seed=0,
-        initial_exploration_steps=50000,
+        initial_exploration_steps=total_timesteps * 0.05,
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
         n_eval_episodes_benchmark=5, # 基准评估局数
     )
