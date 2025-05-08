@@ -1134,8 +1134,8 @@ if __name__ == "__main__":
         save_path="models/gomoku_self_play",
         model_pool_size=100,  # 在内存中保存100个历史模型
         model_update_freq=20000,  # 模型池更新频率
-        eval_freq_benchmark=25000, # Example: Evaluate every 25k agent steps
-        n_eval_episodes_benchmark=50 # Example: Play 50 games for benchmark
+        eval_freq_benchmark=25000, # 基准评估频率
+        n_eval_episodes_benchmark=10 # 基准评估局数
     )
     
     # 可选：与训练好的模型对战
