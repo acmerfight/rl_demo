@@ -363,36 +363,31 @@ def cosine_decay_lr(initial_lr: float, min_lr: float = 1e-7) -> Callable[[float]
       并返回当前的学习率。
     """
     def schedule(progress_remaining: float) -> float:
-        # progress_remaining 从 1.0 (开始) 减到 0.0 (结束)
-        # 我们需要的是从 0.0 (开始) 到 1.0 (结束) 的进度
         current_progress = 1.0 - progress_remaining
-        return min_lr + 0.5 * (initial_lr - min_lr) * (1 + math.cos(math.pi * current_progress))
+        # 使用π/2而不是π，确保余弦从1到0，而不是从1到-1
+        return initial_lr + (min_lr - initial_lr) * math.cos(math.pi/2 * current_progress)
     return schedule
 
 def cosine_decay_clip_range(initial_clip: float, final_clip: float) -> Callable[[float], float]:
     """
-    创建一个余弦衰减学习率调度函数 PPO 的 clip_range。
+    创建一个余弦衰减调度函数，用于PPO的clip_range。
 
     参数:
-    - initial_clip: 初始 (最大) clip_range。
-    - final_clip: 最终 (最小) clip_range。
+    - initial_clip: 初始(最大)clip_range。
+    - final_clip: 最终(最小)clip_range。
 
     返回:
-    - 一个函数，该函数接受 'progress_remaining' (从1.0到0.0)作为输入，
-      并返回当前的 clip_range。
+    - 一个函数，接受'progress_remaining'(从1.0到0.0)作为输入，
+      并返回当前的clip_range。
     """
-    # 确保 initial_clip >= final_clip，因为我们是从大到小衰减
+    # 确保initial_clip >= final_clip
     if final_clip > initial_clip:
-        raise ValueError("final_clip should be less than or equal to initial_clip for decay.")
+        raise ValueError("final_clip应小于或等于initial_clip")
 
     def schedule(progress_remaining: float) -> float:
-        # progress_remaining 从 1.0 (开始) 减到 0.0 (结束)
-        # 我们需要的是从 0.0 (开始) 到 1.0 (结束) 的进度
         current_progress = 1.0 - progress_remaining
-        # 余弦调度：从 initial_clip 线性插值到 final_clip
-        # f(x) = final + 0.5 * (initial - final) * (1 + cos(pi * x))
-        # 这里 x 是 current_progress, initial 是 initial_clip, final 是 final_clip
-        return final_clip + 0.5 * (initial_clip - final_clip) * (1 + math.cos(math.pi * current_progress))
+        # 使用π/2而不是π，确保余弦从1到0，而不是从1到-1
+        return initial_clip + (final_clip - initial_clip) * math.cos(math.pi/2 * current_progress)
     return schedule
 
 class ModelInfo(NamedTuple):
