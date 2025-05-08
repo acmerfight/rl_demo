@@ -773,7 +773,6 @@ class BenchmarkCallback(BaseCallback):
         # Use a distinct seed for the benchmark environment if desired, or random.
         env_fn = make_env(board_size=self.board_size, opponent_model=None, seed=np.random.randint(0, 100000))
         self.eval_env = DummyVecEnv([env_fn])
-
         if self.verbose > 0:
             print(f"BenchmarkCallback: Evaluation environment for random opponent initialized (Board: {self.board_size}x{self.board_size}).")
 
@@ -889,7 +888,6 @@ def train_self_play_gomoku(
     initial_exploration_steps,  # 初始探索步数，使用随机对手
     eval_freq_benchmark, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
     n_eval_episodes_benchmark,  # 基准评估局数
-    log_interval  # 日志记录频率
 ):
     """
     使用真正的自我博弈和Maskable PPO训练五子棋智能体
@@ -995,7 +993,6 @@ def train_self_play_gomoku(
             callback=callbacks,
             tb_log_name="gomoku_self_play",
             reset_num_timesteps=False,
-            log_interval=log_interval,
         )
         
         # 如果完成了初始探索阶段，确保添加一个模型到模型池
@@ -1137,7 +1134,7 @@ if __name__ == "__main__":
         save_path="models/gomoku_self_play",
         model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
         model_update_freq=20000,  # 模型池更新频率
-        opponent_update_freq=10000,  # 对手更新频率
+        opponent_update_freq=5000,  # 对手更新频率
         save_freq=10000,  # 保存模型频率
         learning_rate=3e-4,
         gamma=0.999,
@@ -1148,7 +1145,6 @@ if __name__ == "__main__":
         initial_exploration_steps=50000,
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
         n_eval_episodes_benchmark=5, # 基准评估局数
-        log_interval=10 # 日志记录频率
     )
     
     # 可选：与训练好的模型对战
