@@ -9,7 +9,6 @@ import torch as th
 import torch.nn as nn # ADDED: PyTorch neural network module
 import random
 from datetime import datetime
-from copy import deepcopy
 
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from stable_baselines3.common.utils import set_random_seed
@@ -18,7 +17,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.ppo_mask import MaskablePPO
-from stable_baselines3.common.torch_layers import NatureCNN, BaseFeaturesExtractor # MODIFIED: Added BaseFeaturesExtractor
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor 
 
 class CustomCNN(BaseFeaturesExtractor):
     """
@@ -873,23 +872,23 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
 
 
 def train_self_play_gomoku(
-    board_size=10,  # 使用10x10的棋盘训练更快
-    total_timesteps=1_000_000,
-    n_envs=max(1, os.cpu_count() if os.cpu_count() else 1), # Default n_envs based on CPU count
-    save_path="models/gomoku_self_play",
-    model_pool_size=100,  # 内存中保存的历史模型数量
-    model_update_freq=10000,  # 更新模型池的频率
-    opponent_update_freq=5000,  # 更新对手的频率
-    save_freq=10000,
-    learning_rate=3e-4,
-    gamma=0.999,  # 折扣因子
-    n_steps=256,
-    batch_size=128,
-    n_epochs=10,  # PPO epochs
-    seed=0,
-    initial_exploration_steps=50000,  # 初始探索步数，使用随机对手
-    eval_freq_benchmark: int = 50000, # NEW: Frequency for benchmark evaluation
-    n_eval_episodes_benchmark: int = 30  # NEW: Number of episodes for benchmark evaluation
+    board_size,
+    total_timesteps,
+    n_envs,
+    save_path,
+    model_pool_size,
+    model_update_freq,
+    opponent_update_freq,  # 更新对手的频率
+    save_freq,
+    learning_rate,
+    gamma,  # 折扣因子
+    n_steps,
+    batch_size,
+    n_epochs,  # PPO epochs
+    seed,
+    initial_exploration_steps,  # 初始探索步数，使用随机对手
+    eval_freq_benchmark, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
+    n_eval_episodes_benchmark  # 基准评估局数
 ):
     """
     使用真正的自我博弈和Maskable PPO训练五子棋智能体
@@ -1132,9 +1131,19 @@ if __name__ == "__main__":
     trained_model = train_self_play_gomoku(
         board_size=10,  # 使用较小棋盘加速训练
         total_timesteps=5000 * 10000,  # 可根据需要调整
+        n_envs=os.cpu_count(),  # 使用 CPU 核心数作为环境数量
         save_path="models/gomoku_self_play",
         model_pool_size=50,  # 保存 50 个历史模型，用来更新对手
         model_update_freq=20000,  # 模型池更新频率
+        opponent_update_freq=10000,  # 对手更新频率
+        save_freq=10000,  # 保存模型频率
+        learning_rate=3e-4,
+        gamma=0.999,
+        n_steps=256,
+        batch_size=128,
+        n_epochs=10,
+        seed=0,
+        initial_exploration_steps=50000,
         eval_freq_benchmark=20000, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
         n_eval_episodes_benchmark=5 # 基准评估局数
     )
