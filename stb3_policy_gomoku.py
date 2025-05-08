@@ -364,8 +364,8 @@ def cosine_decay_lr(initial_lr: float, min_lr: float = 1e-7) -> Callable[[float]
     """
     def schedule(progress_remaining: float) -> float:
         current_progress = 1.0 - progress_remaining
-        # 使用π/2而不是π，确保余弦从1到0，而不是从1到-1
-        return initial_lr + (min_lr - initial_lr) * math.cos(math.pi/2 * current_progress)
+        # 使用正确的余弦衰减公式
+        return initial_lr * (math.cos(math.pi/2 * current_progress)) + min_lr * (1 - math.cos(math.pi/2 * current_progress))
     return schedule
 
 def cosine_decay_clip_range(initial_clip: float, final_clip: float) -> Callable[[float], float]:
@@ -380,14 +380,13 @@ def cosine_decay_clip_range(initial_clip: float, final_clip: float) -> Callable[
     - 一个函数，接受'progress_remaining'(从1.0到0.0)作为输入，
       并返回当前的clip_range。
     """
-    # 确保initial_clip >= final_clip
     if final_clip > initial_clip:
         raise ValueError("final_clip应小于或等于initial_clip")
 
     def schedule(progress_remaining: float) -> float:
         current_progress = 1.0 - progress_remaining
-        # 使用π/2而不是π，确保余弦从1到0，而不是从1到-1
-        return initial_clip + (final_clip - initial_clip) * math.cos(math.pi/2 * current_progress)
+        # 使用正确的余弦衰减公式
+        return initial_clip * (math.cos(math.pi/2 * current_progress)) + final_clip * (1 - math.cos(math.pi/2 * current_progress))
     return schedule
 
 class ModelInfo(NamedTuple):
@@ -1171,7 +1170,7 @@ def play_against_model(model_path, board_size=15, render=True):
 
 if __name__ == "__main__":
     # 训练模型
-    TOTAL_TIMESTEPS = 2000 * 10000
+    TOTAL_TIMESTEPS = 1 * 10000 * 10000
     MODEL_UPDATE_FREQ = 20000
     
     # 定义学习率调度
