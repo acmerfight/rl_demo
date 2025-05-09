@@ -910,25 +910,48 @@ def update_opponent_models(vec_env, model_pool, update_prob=0.5):
                 vec_env.env_method("set_opponent_model", opponent_model_path, indices=[i])
 
 
+class OpponentUpdateCallback(BaseCallback):
+    def __init__(self, vec_env: SubprocVecEnv | DummyVecEnv, model_pool: ModelPoolManager, update_freq: int, verbose: int = 0):
+        super().__init__(verbose)
+        self.vec_env = vec_env
+        self.model_pool = model_pool
+        # update_freq 是指智能体与环境交互的总步数 (agent steps)
+        # SB3 回调中的 self.n_calls 就是这个步数
+        self.update_freq = update_freq
+
+    def _on_step(self) -> bool:
+        # self.n_calls 是 SB3 提供的自训练开始以来的总步数
+        if self.n_calls > 0 and self.n_calls % self.update_freq == 0:
+            if self.verbose > 0:
+                print(f"\nSteps: {self.n_calls}. Updating opponent models in environments.")
+            
+            # 调用您现有的更新函数
+            update_opponent_models(self.vec_env, self.model_pool)
+            
+            if self.verbose > 0:
+                print("Opponent models in environments have been updated.")
+        return True
+
+
 def train_self_play_gomoku(
     board_size,
-    total_timesteps,
+    total_timesteps, # 这是总的训练步数
     n_envs,
     save_path,
     model_pool_size,
-    model_update_freq,
-    opponent_update_freq,  # 更新对手的频率
+    model_update_freq, # ModelPoolUpdateCallback 使用的频率
+    opponent_update_freq,  # OpponentUpdateCallback 使用的频率
     save_freq,
     learning_rate_schedule: Callable[[float], float],
     clip_range_schedule: Callable[[float], float],
-    gamma,  # 折扣因子
+    gamma,
     n_steps,
     batch_size,
-    n_epochs,  # PPO epochs
+    n_epochs,
     seed,
-    initial_exploration_steps,  # 初始探索步数，使用随机对手
-    eval_freq_benchmark, # 基准评估频率, 这个值需要乘以 envs 的个数才是实际评估频率
-    n_eval_episodes_benchmark,  # 基准评估局数
+    initial_exploration_steps, # 这个参数的直接作用会减弱，但逻辑可以通过回调组合实现
+    eval_freq_benchmark,
+    n_eval_episodes_benchmark,
 ):
     """
     使用真正的自我博弈和Maskable PPO训练五子棋智能体
@@ -954,38 +977,31 @@ def train_self_play_gomoku(
     - eval_freq_benchmark: 新参数，用于benchmark
     - n_eval_episodes_benchmark: 新参数，用于benchmark
     """
-    # 设置随机种子
     set_random_seed(seed)
-    
-    # 创建保存目录
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
-    # 创建模型池管理器
     model_pool = ModelPoolManager(max_models=model_pool_size)
     print(f"初始化内存模型池，最大容量: {model_pool_size}")
     
-    # 创建多进程环境 - 初始时使用随机对手
     env_fns = [make_env(board_size=board_size, opponent_model=None, seed=seed+i) for i in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns)
-    print(f"Initialized {n_envs} parallel environments.") # Added log for n_envs
+    print(f"Initialized {n_envs} parallel environments.")
     
-    # 确定设备
+    # ... (设备选择, policy_kwargs 不变) ...
     if th.backends.mps.is_available():
         device = "mps"
         print("检测到MPS设备，将使用MPS进行训练。")
     else:
-        device = "auto" # 自动选择 CUDA 或 CPU
+        device = "auto" 
         print("未检测到MPS设备，将使用自动选择的设备 (CUDA 或 CPU)。")
         
-    # 设置模型参数 - 使用 CNN
     policy_kwargs = dict(
-        features_extractor_class=CustomCNN,           # 使用 CustomCNN 作为特征提取器
-        features_extractor_kwargs=dict(features_dim=256), # CNN 输出 256 维特征
-        activation_fn=th.nn.ReLU,                    # 激活函数
-        net_arch=dict(pi=[64], vf=[64])              # 特征提取后，策略和价值网络各有一个64单元的隐藏层
+        features_extractor_class=CustomCNN,
+        features_extractor_kwargs=dict(features_dim=256),
+        activation_fn=th.nn.ReLU,
+        net_arch=dict(pi=[64], vf=[64])
     )
     
-    # 创建模型
     model = MaskablePPO(
         MaskableActorCriticPolicy,
         vec_env,
@@ -995,67 +1011,73 @@ def train_self_play_gomoku(
         n_steps=n_steps,
         batch_size=batch_size,
         n_epochs=n_epochs,
-        verbose=2,  # 增加日志详细程度
+        verbose=2,
         tensorboard_log="./logs/gomoku_tensorboard/",
         policy_kwargs=policy_kwargs,
-        device=device  # 传递设备参数
+        device=device
     )
     
-    # 设置回调函数
+    # --- 设置回调函数 ---
+    callbacks = []
+
+    # 1. 模型池更新回调 (负责将当前模型添加到池中)
     model_pool_callback = ModelPoolUpdateCallback(
         model_pool=model_pool,
-        update_freq=model_update_freq,
+        update_freq=model_update_freq, # 按指定频率添加模型到池
         verbose=2
     )
+    callbacks.append(model_pool_callback)
+
+    # 2. 对手更新回调 (负责从池中更新环境的对手)
+    opponent_update_callback = OpponentUpdateCallback(
+        vec_env=vec_env,
+        model_pool=model_pool,
+        update_freq=opponent_update_freq, # 按指定频率更新环境中的对手
+        verbose=1 # 可以设为1或2
+    )
+    callbacks.append(opponent_update_callback)
     
+    # 3. 模型保存回调
     checkpoint_callback = CheckpointCallback(
-        save_freq=save_freq,  # 因为是多进程，所以除以环境数
+        save_freq=save_freq, 
         save_path=os.path.dirname(save_path),
         name_prefix=os.path.basename(save_path),
         save_replay_buffer=False,
         save_vecnormalize=False,
     )
-    
+    callbacks.append(checkpoint_callback)
+
+    # 4. 基准评估回调
     benchmark_callback = BenchmarkCallback(
         eval_freq=eval_freq_benchmark,
         n_eval_episodes=n_eval_episodes_benchmark,
-        board_size=board_size, # Pass board_size to the callback
+        board_size=board_size,
         verbose=2
     )
+    callbacks.append(benchmark_callback)
 
-    callbacks = [model_pool_callback, checkpoint_callback, benchmark_callback]
+    # --- 关于 initial_exploration_steps ---
+    # 在新的结构中，模型池的第一个模型将在 model_update_freq 步后由 ModelPoolUpdateCallback 添加。
+    # 在此之前，update_opponent_models 会因为模型池为空而使得环境使用随机对手（这是期望的行为）。
+    # 如果您希望在 initial_exploration_steps 后强制添加一个模型（即使它还没达到 model_update_freq），
+    # 可以考虑调整 ModelPoolUpdateCallback 的逻辑或添加一个专门的一次性回调。
+    # 但通常，让 ModelPoolUpdateCallback 自然地在第一个 model_update_freq 后添加模型是可接受的。
+    print(f"模型将在第一个 {model_update_freq} 步之后开始被添加到模型池。")
+    print(f"环境中的对手将在第一个 {opponent_update_freq} 步之后开始从模型池更新。")
 
-    # 训练循环
-    remaining_timesteps = total_timesteps
-    while remaining_timesteps > 0:
-        # 每次训练少量步数，方便更新对手
-        steps_to_train = min(opponent_update_freq, remaining_timesteps)
-        
-        model.learn(
-            total_timesteps=steps_to_train,
-            callback=callbacks,
-            tb_log_name="gomoku_self_play",
-            reset_num_timesteps=False,
-        )
-        
-        # 如果完成了初始探索阶段，确保添加一个模型到模型池
-        current_steps = total_timesteps - remaining_timesteps + steps_to_train
-        if current_steps >= initial_exploration_steps and model_pool.get_model_count() == 0:
-            print("完成初始探索阶段，添加第一个模型到内存模型池")
-            model_pool.add_model(model, iteration="initial", win_rate=0.0)
-        
-        # 更新对手模型
-        update_opponent_models(vec_env, model_pool)
-        print("已更新对手模型")
-        
-        # 更新剩余步数
-        remaining_timesteps -= steps_to_train
-        print(f"已训练步数: {total_timesteps - remaining_timesteps}, 剩余步数: {remaining_timesteps}")
+    # --- 开始训练 ---
+    print(f"开始总共 {total_timesteps} 步的训练...")
+    model.learn(
+        total_timesteps=total_timesteps, # 使用总的训练步数
+        callback=callbacks,
+        tb_log_name="gomoku_self_play",
+        # 对于一个全新的训练，reset_num_timesteps=True 是合适的，
+        # 它会确保 model._total_timesteps 正确设置为这里的 total_timesteps。
+        # 如果您是加载模型并继续训练，则通常设为 False。
+        reset_num_timesteps=True 
+    )
     
-    # 保存最终模型
     model.save(save_path + "_final")
-
-    # 关闭环境
     vec_env.close()
 
     print(f"训练完成！模型已保存到: {save_path}_final")
@@ -1187,7 +1209,7 @@ if __name__ == "__main__":
         model_pool_size=100,  # 保存 50 个历史模型，用来更新对手
         model_update_freq=MODEL_UPDATE_FREQ,
         opponent_update_freq=MODEL_UPDATE_FREQ * 2,  # 对手更新频率
-        save_freq=10000,  # 保存模型频率
+        save_freq=100000,  # 保存模型频率
         learning_rate_schedule=lr_schedule,
         clip_range_schedule=clip_schedule,
         gamma=0.999,
