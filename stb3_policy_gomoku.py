@@ -1053,14 +1053,14 @@ def train_self_play_gomoku(
     )
     callbacks.append(checkpoint_callback)
 
-    # 4. 基准评估回调
-    benchmark_callback = BenchmarkCallback(
-        eval_freq=eval_freq_benchmark,
-        n_eval_episodes=n_eval_episodes_benchmark,
-        board_size=board_size,
-        verbose=2
-    )
-    callbacks.append(benchmark_callback)
+    # # 4. 基准评估回调
+    # benchmark_callback = BenchmarkCallback(
+    #     eval_freq=eval_freq_benchmark,
+    #     n_eval_episodes=n_eval_episodes_benchmark,
+    #     board_size=board_size,
+    #     verbose=2
+    # )
+    # callbacks.append(benchmark_callback)
 
     # --- 关于 initial_exploration_steps ---
     # 在新的结构中，模型池的第一个模型将在 model_update_freq 步后由 ModelPoolUpdateCallback 添加。
