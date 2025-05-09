@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from typing import Dict, Tuple, Optional, Any, List, NamedTuple, Callable
 import os
+import gc
 import gymnasium as gym
 from gymnasium import spaces
 import torch as th
@@ -558,6 +559,11 @@ class GomokuGymEnv(gym.Env):
         """
         if model_path and os.path.exists(model_path):
             try:
+                # 释放旧模型内存
+                if self.opponent_model is not None:
+                    del self.opponent_model
+                    gc.collect()
+                
                 self.opponent_model = MaskablePPO.load(model_path)
                 self.use_random_opponent = False
                 print(f"环境 {os.getpid()} 已从路径 {model_path} 更新对手模型")
